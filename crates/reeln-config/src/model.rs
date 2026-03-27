@@ -190,6 +190,7 @@ pub struct SpeedSegment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RenderProfile {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
@@ -231,7 +232,7 @@ pub struct RenderProfile {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct IterationConfig {
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub mappings: HashMap<String, Vec<String>>,
 }
 
