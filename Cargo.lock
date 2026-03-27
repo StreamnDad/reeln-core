@@ -1109,6 +1109,7 @@ dependencies = [
 name = "reeln-python"
 version = "0.1.0"
 dependencies = [
+ "ffmpeg-next",
  "pyo3",
  "reeln-config",
  "reeln-media",

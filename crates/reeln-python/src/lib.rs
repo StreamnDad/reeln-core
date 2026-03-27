@@ -478,6 +478,9 @@ fn discover_plugins(dir: &str) -> PyResult<PyObject> {
 /// Exposes the `reeln_native` module to Python via PyO3.
 #[pymodule]
 fn reeln_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Suppress ffmpeg's verbose warnings (e.g. UDTA parsing spam).
+    ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Error);
+
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     // Media

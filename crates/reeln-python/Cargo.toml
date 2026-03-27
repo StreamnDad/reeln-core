@@ -20,3 +20,4 @@ reeln-config.workspace = true
 reeln-plugin.workspace = true
 pyo3.workspace = true
 serde_json.workspace = true
+ffmpeg-next.workspace = true
