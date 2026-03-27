@@ -1,0 +1,21 @@
+/target
+**/*.rs.bk
+MIGRATION_PLAN.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Python virtualenvs
+.venv/
+__pycache__/
+*.pyc
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+*.d

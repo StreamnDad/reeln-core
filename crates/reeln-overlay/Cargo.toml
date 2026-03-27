@@ -1,0 +1,21 @@
+[package]
+name = "reeln-overlay"
+description = "Overlay template engine — rasterizes JSON templates to RGBA frames via tiny-skia"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+reeln-media.workspace = true
+tiny-skia.workspace = true
+cosmic-text.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

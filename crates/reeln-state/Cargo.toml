@@ -1,0 +1,22 @@
+[package]
+name = "reeln-state"
+description = "Game state machine, JSON persistence, directory management, and replay collection"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+reeln-sport.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+log.workspace = true
+glob.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

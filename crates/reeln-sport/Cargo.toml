@@ -1,0 +1,13 @@
+[package]
+name = "reeln-sport"
+description = "Sport registry, segment creation, naming, and validation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

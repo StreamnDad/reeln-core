@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/reeln-media",
+    "crates/reeln-overlay",
+    "crates/reeln-sport",
+    "crates/reeln-state",
+    "crates/reeln-config",
+    "crates/reeln-plugin",
+    "crates/reeln-python",
+    "crates/reeln-ffi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/StreamnDad/reeln-core"
+homepage = "https://streamn.dad"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+
+# Logging
+log = "0.4"
+
+# Media
+ffmpeg-next = "8"
+
+# 2D rendering (overlay)
+tiny-skia = "0.11"
+cosmic-text = "0.12"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Domain types
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Filesystem
+tempfile = "3"
+dirs = "6"
+glob = "0.3"
+
+# Python bindings
+pyo3 = { version = "0.23", features = ["extension-module"] }
+
+# Dynamic loading
+libloading = "0.8"
+
+# Internal crates
+reeln-media = { path = "crates/reeln-media" }
+reeln-overlay = { path = "crates/reeln-overlay" }
+reeln-sport = { path = "crates/reeln-sport" }
+reeln-state = { path = "crates/reeln-state" }
+reeln-config = { path = "crates/reeln-config" }
+reeln-plugin = { path = "crates/reeln-plugin" }

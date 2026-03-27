@@ -1,0 +1,20 @@
+[package]
+name = "reeln-media"
+description = "Media probing, concatenation, rendering, and filter chains via libav*"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+ffmpeg-next.workspace = true
+thiserror.workspace = true
+log.workspace = true
+libc = "0.2"
+tempfile.workspace = true
+image.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+image.workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "reeln-python"
+description = "Python bindings via PyO3/maturin — exposes reeln_native module"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+name = "reeln_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+reeln-media.workspace = true
+reeln-overlay.workspace = true
+reeln-sport.workspace = true
+reeln-state.workspace = true
+reeln-config.workspace = true
+reeln-plugin.workspace = true
+pyo3.workspace = true
+serde_json.workspace = true
