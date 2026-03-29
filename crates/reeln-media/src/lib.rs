@@ -270,6 +270,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::default_constructed_unit_structs)]
     fn test_libav_backend_default_and_clone() {
         let b1 = LibavBackend::default();
         let b2 = b1.clone();
@@ -279,6 +280,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::default_constructed_unit_structs)]
     fn test_subprocess_backend_default_and_clone() {
         let b1 = SubprocessBackend::default();
         let b2 = b1.clone();

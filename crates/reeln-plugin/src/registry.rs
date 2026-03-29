@@ -312,7 +312,7 @@ mod tests {
                 ConfigField {
                     name: "c".to_string(),
                     field_type: "float".to_string(),
-                    default: Some(serde_json::json!(3.14)),
+                    default: Some(serde_json::json!(1.23)),
                     required: false,
                     description: "".to_string(),
                     secret: false,
@@ -322,7 +322,7 @@ mod tests {
         let defaults = schema.defaults_dict();
         assert_eq!(defaults.len(), 2);
         assert_eq!(defaults["a"], serde_json::json!("hello"));
-        assert_eq!(defaults["c"], serde_json::json!(3.14));
+        assert_eq!(defaults["c"], serde_json::json!(1.23));
         assert!(!defaults.contains_key("b"));
     }
 

@@ -1097,7 +1097,7 @@ mod tests {
     fn test_concat_options_clone_and_debug() {
         let opts = default_copy_opts();
         let cloned = opts.clone();
-        assert_eq!(cloned.copy, true);
+        assert!(cloned.copy);
         assert_eq!(cloned.video_codec, "libx264");
 
         let debug = format!("{opts:?}");

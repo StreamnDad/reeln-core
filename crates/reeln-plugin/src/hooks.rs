@@ -296,6 +296,7 @@ mod tests {
     fn hook_clone_and_copy() {
         let h = Hook::OnError;
         let h2 = h;
+        #[allow(clippy::clone_on_copy)]
         let h3 = h.clone();
         assert_eq!(h, h2);
         assert_eq!(h, h3);
