@@ -579,10 +579,15 @@ mod tests {
         hooks: Vec<Hook>,
         callback: HookCallbackFn,
     ) -> LoadedPlugin {
-        // Load the current executable as a "library" — this is safe and keeps
-        // the library handle valid for the test lifetime.
-        let exe = std::env::current_exe().unwrap();
-        let library = unsafe { libloading::Library::new(exe.as_os_str()) }.unwrap();
+        // Load a shared library to keep the handle valid for the test lifetime.
+        // On macOS we can dlopen the test executable; on Linux PIE executables
+        // cannot be dlopen'd, so we load libc instead.
+        let library = if cfg!(target_os = "linux") {
+            unsafe { libloading::Library::new("libc.so.6") }.unwrap()
+        } else {
+            let exe = std::env::current_exe().unwrap();
+            unsafe { libloading::Library::new(exe.as_os_str()) }.unwrap()
+        };
         LoadedPlugin {
             _library: library,
             name: name.to_string(),
