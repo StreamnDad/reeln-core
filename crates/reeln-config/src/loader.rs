@@ -163,8 +163,7 @@ pub fn validate_config(data: &serde_json::Value) -> Vec<String> {
         if let Some(arr) = val.as_array() {
             for (i, item) in arr.iter().enumerate() {
                 let valid = item.is_string()
-                    || (item.is_object()
-                        && item.get("name").is_some_and(|n| n.is_string()));
+                    || (item.is_object() && item.get("name").is_some_and(|n| n.is_string()));
                 if !valid {
                     warnings.push(format!(
                         "event_types[{i}] must be a string or {{\"name\": ..., \"team_specific\": ...}}"
@@ -184,7 +183,8 @@ pub fn validate_config(data: &serde_json::Value) -> Vec<String> {
         let event_types: Vec<&str> = event_types_arr
             .iter()
             .filter_map(|v| {
-                v.as_str().or_else(|| v.get("name").and_then(|n| n.as_str()))
+                v.as_str()
+                    .or_else(|| v.get("name").and_then(|n| n.as_str()))
             })
             .collect();
         if let Some(iterations) = data.get("iterations")

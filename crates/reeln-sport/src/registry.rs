@@ -475,7 +475,10 @@ mod tests {
     #[test]
     fn test_default_event_types_football() {
         let types = default_event_types("football");
-        assert_eq!(types, vec!["touchdown", "field-goal", "interception", "sack"]);
+        assert_eq!(
+            types,
+            vec!["touchdown", "field-goal", "interception", "sack"]
+        );
     }
 
     #[test]

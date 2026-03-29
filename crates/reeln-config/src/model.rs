@@ -579,8 +579,7 @@ mod tests {
 
     #[test]
     fn test_event_type_entry_full_default_team_specific() {
-        let entry: EventTypeEntry =
-            serde_json::from_str(r#"{"name": "save"}"#).unwrap();
+        let entry: EventTypeEntry = serde_json::from_str(r#"{"name": "save"}"#).unwrap();
         assert_eq!(entry.name(), "save");
         assert!(!entry.team_specific());
     }
@@ -641,7 +640,8 @@ mod tests {
 
     #[test]
     fn test_app_config_event_types_from_full_objects() {
-        let json = r#"{"event_types": [{"name": "goal", "team_specific": true}, {"name": "timeout"}]}"#;
+        let json =
+            r#"{"event_types": [{"name": "goal", "team_specific": true}, {"name": "timeout"}]}"#;
         let config: AppConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.event_types.len(), 2);
         assert_eq!(config.event_types[0].name(), "goal");
