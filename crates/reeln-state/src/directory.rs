@@ -40,10 +40,10 @@ pub fn detect_next_game_number(base_dir: &Path, date: &str, home: &str, away: &s
         if name.as_ref() == prefix {
             // First game exists — next is at least 2
             game_number = game_number.max(2);
-        } else if let Some(suffix) = name.strip_prefix(&format!("{prefix}_g")) {
-            if let Ok(n) = suffix.parse::<u32>() {
-                game_number = game_number.max(n + 1);
-            }
+        } else if let Some(suffix) = name.strip_prefix(&format!("{prefix}_g"))
+            && let Ok(n) = suffix.parse::<u32>()
+        {
+            game_number = game_number.max(n + 1);
         }
     }
 

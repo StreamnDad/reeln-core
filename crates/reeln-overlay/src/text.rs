@@ -65,6 +65,7 @@ pub fn measure_text(text: &str, font_family: &str, font_size: f32) -> (f32, f32)
 ///
 /// Handles font loading, text shaping, alignment, auto-shrink, and
 /// per-pixel alpha blending onto the existing pixmap content.
+#[allow(clippy::too_many_arguments)]
 pub fn render_text_to_pixmap(
     pixmap: &mut Pixmap,
     text: &str,

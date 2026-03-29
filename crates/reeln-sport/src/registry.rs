@@ -155,6 +155,70 @@ impl SportRegistry {
     }
 }
 
+/// Return default event types for a sport.
+///
+/// Returns a curated list of common event types for known sports,
+/// or an empty list for unknown or generic sports.
+#[must_use]
+pub fn default_event_types(sport: &str) -> Vec<String> {
+    default_event_type_entries(sport)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// Return default event types with team-specific flags.
+///
+/// Each entry is `(name, team_specific)`. Team-specific types have
+/// Home/Away variants in the UI.
+#[must_use]
+pub fn default_event_type_entries(sport: &str) -> Vec<(String, bool)> {
+    let entries: &[(&str, bool)] = match sport.to_lowercase().as_str() {
+        "hockey" => &[
+            ("goal", true),
+            ("save", true),
+            ("penalty", true),
+            ("assist", false),
+        ],
+        "basketball" => &[
+            ("basket", true),
+            ("foul", true),
+            ("turnover", true),
+            ("block", true),
+        ],
+        "soccer" => &[
+            ("goal", true),
+            ("foul", true),
+            ("corner", false),
+            ("offside", false),
+            ("save", true),
+        ],
+        "football" | "nfl" | "american-football" => &[
+            ("touchdown", true),
+            ("field-goal", true),
+            ("interception", true),
+            ("sack", true),
+        ],
+        "baseball" => &[
+            ("hit", true),
+            ("strikeout", true),
+            ("home-run", true),
+            ("catch", true),
+        ],
+        "lacrosse" => &[
+            ("goal", true),
+            ("save", true),
+            ("penalty", true),
+            ("ground-ball", false),
+        ],
+        _ => &[],
+    };
+    entries
+        .iter()
+        .map(|(name, team)| ((*name).to_string(), *team))
+        .collect()
+}
+
 /// Deserialize a `SportAlias` from a JSON-like map.
 ///
 /// Expected keys: `sport`, `segment_name`, `segment_count`,
@@ -388,6 +452,66 @@ mod tests {
         let json = serde_json::to_string(&alias).unwrap();
         let deserialized: SportAlias = serde_json::from_str(&json).unwrap();
         assert_eq!(alias, deserialized);
+    }
+
+    #[test]
+    fn test_default_event_types_hockey() {
+        let types = default_event_types("hockey");
+        assert_eq!(types, vec!["goal", "save", "penalty", "assist"]);
+    }
+
+    #[test]
+    fn test_default_event_types_basketball() {
+        let types = default_event_types("basketball");
+        assert_eq!(types, vec!["basket", "foul", "turnover", "block"]);
+    }
+
+    #[test]
+    fn test_default_event_types_soccer() {
+        let types = default_event_types("soccer");
+        assert_eq!(types, vec!["goal", "foul", "corner", "offside", "save"]);
+    }
+
+    #[test]
+    fn test_default_event_types_football() {
+        let types = default_event_types("football");
+        assert_eq!(types, vec!["touchdown", "field-goal", "interception", "sack"]);
+    }
+
+    #[test]
+    fn test_default_event_types_football_aliases() {
+        assert_eq!(default_event_types("nfl"), default_event_types("football"));
+        assert_eq!(
+            default_event_types("american-football"),
+            default_event_types("football")
+        );
+    }
+
+    #[test]
+    fn test_default_event_types_baseball() {
+        let types = default_event_types("baseball");
+        assert_eq!(types, vec!["hit", "strikeout", "home-run", "catch"]);
+    }
+
+    #[test]
+    fn test_default_event_types_lacrosse() {
+        let types = default_event_types("lacrosse");
+        assert_eq!(types, vec!["goal", "save", "penalty", "ground-ball"]);
+    }
+
+    #[test]
+    fn test_default_event_types_generic_empty() {
+        assert!(default_event_types("generic").is_empty());
+    }
+
+    #[test]
+    fn test_default_event_types_unknown_sport_empty() {
+        assert!(default_event_types("curling").is_empty());
+    }
+
+    #[test]
+    fn test_default_event_types_case_insensitive() {
+        assert_eq!(default_event_types("HOCKEY"), default_event_types("hockey"));
     }
 
     #[test]

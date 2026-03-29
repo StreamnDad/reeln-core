@@ -249,6 +249,41 @@ impl IterationConfig {
     }
 }
 
+// ── EventTypeEntry ───────────────────────────────────────────────────
+
+/// A configured event type, supporting both simple strings and full entries.
+///
+/// Backward compatible: `"goal"` deserializes as `Simple("goal")`,
+/// `{"name": "goal", "team_specific": true}` as `Full { .. }`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum EventTypeEntry {
+    Full {
+        name: String,
+        #[serde(default)]
+        team_specific: bool,
+    },
+    Simple(String),
+}
+
+impl EventTypeEntry {
+    /// The event type name.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Simple(s) => s,
+            Self::Full { name, .. } => name,
+        }
+    }
+
+    /// Whether this event type has Home/Away variants.
+    pub fn team_specific(&self) -> bool {
+        match self {
+            Self::Simple(_) => false,
+            Self::Full { team_specific, .. } => *team_specific,
+        }
+    }
+}
+
 // ── AppConfig ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -257,6 +292,8 @@ pub struct AppConfig {
     pub config_version: u32,
     #[serde(default = "default_sport")]
     pub sport: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_types: Vec<EventTypeEntry>,
     #[serde(default)]
     pub video: VideoConfig,
     #[serde(default)]
@@ -278,6 +315,7 @@ impl Default for AppConfig {
         Self {
             config_version: default_config_version(),
             sport: default_sport(),
+            event_types: Vec::new(),
             video: VideoConfig::default(),
             paths: PathConfig::default(),
             render_profiles: HashMap::new(),
@@ -520,5 +558,113 @@ mod tests {
     fn test_is_zero_u32_helper() {
         assert!(is_zero_u32(&0));
         assert!(!is_zero_u32(&1));
+    }
+
+    #[test]
+    fn test_event_type_entry_simple() {
+        let entry = EventTypeEntry::Simple("goal".to_string());
+        assert_eq!(entry.name(), "goal");
+        assert!(!entry.team_specific());
+    }
+
+    #[test]
+    fn test_event_type_entry_full() {
+        let entry = EventTypeEntry::Full {
+            name: "goal".to_string(),
+            team_specific: true,
+        };
+        assert_eq!(entry.name(), "goal");
+        assert!(entry.team_specific());
+    }
+
+    #[test]
+    fn test_event_type_entry_full_default_team_specific() {
+        let entry: EventTypeEntry =
+            serde_json::from_str(r#"{"name": "save"}"#).unwrap();
+        assert_eq!(entry.name(), "save");
+        assert!(!entry.team_specific());
+    }
+
+    #[test]
+    fn test_event_type_entry_simple_from_string_json() {
+        let entry: EventTypeEntry = serde_json::from_str(r#""goal""#).unwrap();
+        assert_eq!(entry.name(), "goal");
+        assert!(!entry.team_specific());
+    }
+
+    #[test]
+    fn test_event_type_entry_full_roundtrip() {
+        let entry = EventTypeEntry::Full {
+            name: "goal".to_string(),
+            team_specific: true,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let deserialized: EventTypeEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry, deserialized);
+    }
+
+    #[test]
+    fn test_app_config_event_types_roundtrip_full() {
+        let config = AppConfig {
+            event_types: vec![
+                EventTypeEntry::Full {
+                    name: "goal".to_string(),
+                    team_specific: true,
+                },
+                EventTypeEntry::Full {
+                    name: "timeout".to_string(),
+                    team_specific: false,
+                },
+            ],
+            ..AppConfig::default()
+        };
+        let json_str = serde_json::to_string_pretty(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(config.event_types, deserialized.event_types);
+    }
+
+    #[test]
+    fn test_app_config_event_types_skip_serializing_when_empty() {
+        let config = AppConfig::default();
+        let val = serde_json::to_value(&config).unwrap();
+        assert!(val.get("event_types").is_none());
+    }
+
+    #[test]
+    fn test_app_config_event_types_from_simple_strings() {
+        let json = r#"{"event_types": ["goal", "assist"]}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.event_types.len(), 2);
+        assert_eq!(config.event_types[0].name(), "goal");
+        assert!(!config.event_types[0].team_specific());
+    }
+
+    #[test]
+    fn test_app_config_event_types_from_full_objects() {
+        let json = r#"{"event_types": [{"name": "goal", "team_specific": true}, {"name": "timeout"}]}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.event_types.len(), 2);
+        assert_eq!(config.event_types[0].name(), "goal");
+        assert!(config.event_types[0].team_specific());
+        assert_eq!(config.event_types[1].name(), "timeout");
+        assert!(!config.event_types[1].team_specific());
+    }
+
+    #[test]
+    fn test_app_config_event_types_mixed_format() {
+        let json = r#"{"event_types": ["clip", {"name": "goal", "team_specific": true}]}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.event_types.len(), 2);
+        assert_eq!(config.event_types[0].name(), "clip");
+        assert!(!config.event_types[0].team_specific());
+        assert_eq!(config.event_types[1].name(), "goal");
+        assert!(config.event_types[1].team_specific());
+    }
+
+    #[test]
+    fn test_app_config_event_types_missing_defaults_empty() {
+        let json = r#"{"sport": "hockey"}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.event_types.is_empty());
     }
 }

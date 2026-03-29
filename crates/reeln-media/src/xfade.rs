@@ -71,6 +71,7 @@ pub fn xfade_concat_native(
 
     // Build video xfade chain.
     let mut offset = durations[0] - fade;
+    #[allow(clippy::needless_range_loop)]
     for i in 1..n {
         let v_in = if i == 1 {
             "[0:v]".to_string()
@@ -194,6 +195,7 @@ pub(crate) fn build_xfade_args(
     let mut a_parts: Vec<String> = Vec::new();
 
     let mut offset = durations[0] - fade;
+    #[allow(clippy::needless_range_loop)]
     for i in 1..n {
         let v_in = if i == 1 {
             format!("[{}:v]", i - 1)

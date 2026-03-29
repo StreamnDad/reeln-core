@@ -126,10 +126,7 @@ fn write_frame_as_png(
 
     // Write PNG using image crate.
     image::save_buffer(output, &pixels, width, height, image::ColorType::Rgb8).map_err(|e| {
-        MediaError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e.to_string(),
-        ))
+        MediaError::Io(std::io::Error::other(e.to_string()))
     })?;
 
     Ok(())

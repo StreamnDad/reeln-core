@@ -316,6 +316,7 @@ fn rounded_rect_path(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia
 // ── Image compositing ───────────────────────────────────────────────
 
 /// Load an image from disk and composite it onto the pixmap.
+#[allow(clippy::too_many_arguments)]
 fn render_image(
     pixmap: &mut Pixmap,
     path: &str,
@@ -454,8 +455,10 @@ fn render_border(
     };
 
     if let Some(path) = path {
-        let mut stroke = tiny_skia::Stroke::default();
-        stroke.width = border.width;
+        let stroke = tiny_skia::Stroke {
+            width: border.width,
+            ..tiny_skia::Stroke::default()
+        };
         pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
     }
 

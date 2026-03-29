@@ -670,6 +670,7 @@ fn build_audio_filter_graph(
 /// - Simple `scale=W:H` filters
 /// - Multi-chain specs with `color=c=...:s=WxH` (smart pad background determines output)
 /// - `pad=W:H:...` filters
+///
 /// Returns (width, height) with defaults from the decoder if not found.
 fn parse_output_dimensions(filter_spec: &str, dec_w: u32, dec_h: u32) -> (u32, u32) {
     // For multi-chain specs with color source + overlay, the output dimensions
@@ -684,12 +685,11 @@ fn parse_output_dimensions(filter_spec: &str, dec_w: u32, dec_h: u32) -> (u32, u
                 for param in trimmed.split(':') {
                     if let Some(size) = param.strip_prefix("s=") {
                         let parts: Vec<&str> = size.split('x').collect();
-                        if parts.len() == 2 {
-                            if let (Ok(w), Ok(h)) =
+                        if parts.len() == 2
+                            && let (Ok(w), Ok(h)) =
                                 (parts[0].parse::<u32>(), parts[1].parse::<u32>())
-                            {
-                                return (w, h);
-                            }
+                        {
+                            return (w, h);
                         }
                     }
                 }
@@ -708,10 +708,10 @@ fn parse_output_dimensions(filter_spec: &str, dec_w: u32, dec_h: u32) -> (u32, u
         };
         if let Some(args) = scale_part.strip_prefix("scale=") {
             let parts: Vec<&str> = args.split(':').collect();
-            if parts.len() >= 2 {
-                if let (Ok(w), Ok(h)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                    return (w, h);
-                }
+            if parts.len() >= 2
+                && let (Ok(w), Ok(h)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+            {
+                return (w, h);
             }
         }
     }

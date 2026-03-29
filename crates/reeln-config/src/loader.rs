@@ -158,6 +158,48 @@ pub fn validate_config(data: &serde_json::Value) -> Vec<String> {
         }
     }
 
+    // Validate event_types if present
+    if let Some(val) = data.get("event_types") {
+        if let Some(arr) = val.as_array() {
+            for (i, item) in arr.iter().enumerate() {
+                let valid = item.is_string()
+                    || (item.is_object()
+                        && item.get("name").is_some_and(|n| n.is_string()));
+                if !valid {
+                    warnings.push(format!(
+                        "event_types[{i}] must be a string or {{\"name\": ..., \"team_specific\": ...}}"
+                    ));
+                }
+            }
+        } else {
+            warnings.push("'event_types' must be an array".to_string());
+        }
+    }
+
+    // Cross-validate: iterations referencing types not in event_types
+    if let Some(event_types_val) = data.get("event_types")
+        && let Some(event_types_arr) = event_types_val.as_array()
+        && !event_types_arr.is_empty()
+    {
+        let event_types: Vec<&str> = event_types_arr
+            .iter()
+            .filter_map(|v| {
+                v.as_str().or_else(|| v.get("name").and_then(|n| n.as_str()))
+            })
+            .collect();
+        if let Some(iterations) = data.get("iterations")
+            && let Some(iter_map) = iterations.as_object()
+        {
+            for key in iter_map.keys() {
+                if key != "default" && !event_types.contains(&key.as_str()) {
+                    warnings.push(format!(
+                        "iterations references type '{key}' not listed in event_types"
+                    ));
+                }
+            }
+        }
+    }
+
     warnings
 }
 
@@ -527,6 +569,101 @@ mod tests {
             "branding": {},
             "orchestration": {},
             "plugins": {}
+        });
+        let warnings = validate_config(&data);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_config_event_types_valid() {
+        let data = serde_json::json!({
+            "event_types": ["goal", "save", "penalty"]
+        });
+        let warnings = validate_config(&data);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_config_event_types_not_array() {
+        let data = serde_json::json!({"event_types": "goal"});
+        let warnings = validate_config(&data);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("must be an array"));
+    }
+
+    #[test]
+    fn test_validate_config_event_types_non_string_element() {
+        let data = serde_json::json!({"event_types": ["goal", 42, "save"]});
+        let warnings = validate_config(&data);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("event_types[1]"));
+    }
+
+    #[test]
+    fn test_validate_config_event_types_full_objects_valid() {
+        let data = serde_json::json!({
+            "event_types": [
+                {"name": "goal", "team_specific": true},
+                {"name": "timeout"},
+                "clip"
+            ]
+        });
+        let warnings = validate_config(&data);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_config_event_types_object_missing_name() {
+        let data = serde_json::json!({"event_types": [{"team_specific": true}]});
+        let warnings = validate_config(&data);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("event_types[0]"));
+    }
+
+    #[test]
+    fn test_validate_config_iterations_cross_validate_with_objects() {
+        let data = serde_json::json!({
+            "event_types": [{"name": "goal", "team_specific": true}, "save"],
+            "iterations": {"goal": ["p1"], "penalty": ["p2"]}
+        });
+        let warnings = validate_config(&data);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("iterations references type 'penalty'"));
+    }
+
+    #[test]
+    fn test_validate_config_event_types_empty_array() {
+        let data = serde_json::json!({"event_types": []});
+        let warnings = validate_config(&data);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_config_iterations_references_unlisted_type() {
+        let data = serde_json::json!({
+            "event_types": ["goal", "save"],
+            "iterations": {"goal": ["profile1"], "penalty": ["profile2"]}
+        });
+        let warnings = validate_config(&data);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("iterations references type 'penalty'"));
+    }
+
+    #[test]
+    fn test_validate_config_iterations_default_not_warned() {
+        let data = serde_json::json!({
+            "event_types": ["goal"],
+            "iterations": {"goal": ["p1"], "default": ["p2"]}
+        });
+        let warnings = validate_config(&data);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validate_config_iterations_no_cross_validate_when_event_types_empty() {
+        let data = serde_json::json!({
+            "event_types": [],
+            "iterations": {"penalty": ["profile1"]}
         });
         let warnings = validate_config(&data);
         assert!(warnings.is_empty());

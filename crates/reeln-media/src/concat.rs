@@ -519,120 +519,50 @@ fn concat_reencode(
             }
 
             // Video packets.
-            if let Some((vid_ist_idx, ref mut vid_dec)) = video_decoder {
-                if ist_idx == vid_ist_idx {
-                    if let Some((v_ost_idx, ref mut v_enc)) = vid_enc {
-                        let ost_tb = ost_time_bases[v_ost_idx];
-                        let ist_tb = stream_configs[v_ost_idx].ist_time_base;
+            if let Some((vid_ist_idx, ref mut vid_dec)) = video_decoder
+                && ist_idx == vid_ist_idx
+            {
+                if let Some((v_ost_idx, ref mut v_enc)) = vid_enc {
+                    let ost_tb = ost_time_bases[v_ost_idx];
+                    let ist_tb = stream_configs[v_ost_idx].ist_time_base;
 
-                        let _ = vid_dec.send_packet(&packet);
-                        let mut vframe = frame::Video::empty();
-                        while vid_dec.receive_frame(&mut vframe).is_ok() {
-                            let ts = vframe.timestamp();
-                            vframe.set_pts(ts);
-                            vframe.set_kind(picture::Type::None);
+                    let _ = vid_dec.send_packet(&packet);
+                    let mut vframe = frame::Video::empty();
+                    while vid_dec.receive_frame(&mut vframe).is_ok() {
+                        let ts = vframe.timestamp();
+                        vframe.set_pts(ts);
+                        vframe.set_kind(picture::Type::None);
 
-                            if let Some(pts) = vframe.pts() {
-                                let rescaled = pts.rescale(ist_tb, ost_tb);
-                                let offset_pts = rescaled + pts_offsets[v_ost_idx];
-                                vframe.set_pts(Some(offset_pts));
-                                last_pts[v_ost_idx] = offset_pts;
-                            }
-                            last_duration[v_ost_idx] = 1;
-
-                            let _ = v_enc.send_frame(&vframe);
-                            drain_video_encoder(v_enc, v_ost_idx, &mut octx);
+                        if let Some(pts) = vframe.pts() {
+                            let rescaled = pts.rescale(ist_tb, ost_tb);
+                            let offset_pts = rescaled + pts_offsets[v_ost_idx];
+                            vframe.set_pts(Some(offset_pts));
+                            last_pts[v_ost_idx] = offset_pts;
                         }
+                        last_duration[v_ost_idx] = 1;
+
+                        let _ = v_enc.send_frame(&vframe);
+                        drain_video_encoder(v_enc, v_ost_idx, &mut octx);
                     }
-                    continue;
                 }
+                continue;
             }
 
             // Audio packets.
-            if let Some((aud_ist_idx, ref mut aud_dec)) = audio_decoder {
-                if ist_idx == aud_ist_idx {
-                    if let Some((a_ost_idx, ref mut a_enc, ref mut resampler)) = aud_enc {
-                        let ost_tb = ost_time_bases[a_ost_idx];
-                        let ist_tb = stream_configs[a_ost_idx].ist_time_base;
-
-                        let _ = aud_dec.send_packet(&packet);
-                        let mut aframe = frame::Audio::empty();
-                        while aud_dec.receive_frame(&mut aframe).is_ok() {
-                            let ts = aframe.timestamp();
-                            aframe.set_pts(ts);
-
-                            // Resample if needed, then encode.
-                            let frame_to_encode = if let Some(r) = resampler {
-                                let mut resampled = frame::Audio::empty();
-                                if r.run(&aframe, &mut resampled).is_ok() {
-                                    resampled.set_pts(aframe.pts());
-                                    resampled
-                                } else {
-                                    continue;
-                                }
-                            } else {
-                                aframe.clone()
-                            };
-
-                            // Apply PTS offset.
-                            if let Some(pts) = frame_to_encode.pts() {
-                                let rescaled = pts.rescale(ist_tb, ost_tb);
-                                let offset_pts = rescaled + pts_offsets[a_ost_idx];
-                                // frame_to_encode is already consumed, set on encoder frame
-                                let mut offset_frame = frame_to_encode;
-                                offset_frame.set_pts(Some(offset_pts));
-                                last_pts[a_ost_idx] = offset_pts;
-                                last_duration[a_ost_idx] = 1;
-                                let _ = a_enc.send_frame(&offset_frame);
-                            } else {
-                                let _ = a_enc.send_frame(&frame_to_encode);
-                            }
-                            drain_audio_encoder(a_enc, a_ost_idx, &mut octx);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Flush video decoder/encoder for this segment.
-        if let Some((_vid_ist_idx, ref mut vid_dec)) = video_decoder {
-            if let Some((v_ost_idx, ref mut v_enc)) = vid_enc {
-                let ost_tb = ost_time_bases[v_ost_idx];
-                let ist_tb = stream_configs[v_ost_idx].ist_time_base;
-
-                let _ = vid_dec.send_eof();
-                let mut vframe = frame::Video::empty();
-                while vid_dec.receive_frame(&mut vframe).is_ok() {
-                    let ts = vframe.timestamp();
-                    vframe.set_pts(ts);
-                    vframe.set_kind(picture::Type::None);
-                    if let Some(pts) = vframe.pts() {
-                        let rescaled = pts.rescale(ist_tb, ost_tb);
-                        let offset_pts = rescaled + pts_offsets[v_ost_idx];
-                        vframe.set_pts(Some(offset_pts));
-                        last_pts[v_ost_idx] = offset_pts;
-                    }
-                    last_duration[v_ost_idx] = 1;
-                    let _ = v_enc.send_frame(&vframe);
-                    drain_video_encoder(v_enc, v_ost_idx, &mut octx);
-                }
-                let _ = v_enc.send_eof();
-                drain_video_encoder(v_enc, v_ost_idx, &mut octx);
-            }
-        }
-
-        // Flush audio decoder/encoder for this segment.
-        if let Some((_aud_ist_idx, ref mut aud_dec)) = audio_decoder {
-            if let Some((a_ost_idx, ref mut a_enc, ref mut resampler)) = aud_enc {
+            if let Some((aud_ist_idx, ref mut aud_dec)) = audio_decoder
+                && ist_idx == aud_ist_idx
+                && let Some((a_ost_idx, ref mut a_enc, ref mut resampler)) = aud_enc
+            {
                 let ost_tb = ost_time_bases[a_ost_idx];
                 let ist_tb = stream_configs[a_ost_idx].ist_time_base;
 
-                let _ = aud_dec.send_eof();
+                let _ = aud_dec.send_packet(&packet);
                 let mut aframe = frame::Audio::empty();
                 while aud_dec.receive_frame(&mut aframe).is_ok() {
                     let ts = aframe.timestamp();
                     aframe.set_pts(ts);
 
+                    // Resample if needed, then encode.
                     let frame_to_encode = if let Some(r) = resampler {
                         let mut resampled = frame::Audio::empty();
                         if r.run(&aframe, &mut resampled).is_ok() {
@@ -645,9 +575,11 @@ fn concat_reencode(
                         aframe.clone()
                     };
 
+                    // Apply PTS offset.
                     if let Some(pts) = frame_to_encode.pts() {
                         let rescaled = pts.rescale(ist_tb, ost_tb);
                         let offset_pts = rescaled + pts_offsets[a_ost_idx];
+                        // frame_to_encode is already consumed, set on encoder frame
                         let mut offset_frame = frame_to_encode;
                         offset_frame.set_pts(Some(offset_pts));
                         last_pts[a_ost_idx] = offset_pts;
@@ -658,19 +590,86 @@ fn concat_reencode(
                     }
                     drain_audio_encoder(a_enc, a_ost_idx, &mut octx);
                 }
+            }
+        }
 
-                // Flush resampler delay.
-                if let Some(r) = resampler {
-                    let mut delay = frame::Audio::empty();
-                    while r.flush(&mut delay).is_ok() && delay.samples() > 0 {
-                        let _ = a_enc.send_frame(&delay);
-                        drain_audio_encoder(a_enc, a_ost_idx, &mut octx);
-                    }
+        // Flush video decoder/encoder for this segment.
+        if let Some((_vid_ist_idx, ref mut vid_dec)) = video_decoder
+            && let Some((v_ost_idx, ref mut v_enc)) = vid_enc
+        {
+            let ost_tb = ost_time_bases[v_ost_idx];
+            let ist_tb = stream_configs[v_ost_idx].ist_time_base;
+
+            let _ = vid_dec.send_eof();
+            let mut vframe = frame::Video::empty();
+            while vid_dec.receive_frame(&mut vframe).is_ok() {
+                let ts = vframe.timestamp();
+                vframe.set_pts(ts);
+                vframe.set_kind(picture::Type::None);
+                if let Some(pts) = vframe.pts() {
+                    let rescaled = pts.rescale(ist_tb, ost_tb);
+                    let offset_pts = rescaled + pts_offsets[v_ost_idx];
+                    vframe.set_pts(Some(offset_pts));
+                    last_pts[v_ost_idx] = offset_pts;
                 }
+                last_duration[v_ost_idx] = 1;
+                let _ = v_enc.send_frame(&vframe);
+                drain_video_encoder(v_enc, v_ost_idx, &mut octx);
+            }
+            let _ = v_enc.send_eof();
+            drain_video_encoder(v_enc, v_ost_idx, &mut octx);
+        }
 
-                let _ = a_enc.send_eof();
+        // Flush audio decoder/encoder for this segment.
+        if let Some((_aud_ist_idx, ref mut aud_dec)) = audio_decoder
+            && let Some((a_ost_idx, ref mut a_enc, ref mut resampler)) = aud_enc
+        {
+            let ost_tb = ost_time_bases[a_ost_idx];
+            let ist_tb = stream_configs[a_ost_idx].ist_time_base;
+
+            let _ = aud_dec.send_eof();
+            let mut aframe = frame::Audio::empty();
+            while aud_dec.receive_frame(&mut aframe).is_ok() {
+                let ts = aframe.timestamp();
+                aframe.set_pts(ts);
+
+                let frame_to_encode = if let Some(r) = resampler {
+                    let mut resampled = frame::Audio::empty();
+                    if r.run(&aframe, &mut resampled).is_ok() {
+                        resampled.set_pts(aframe.pts());
+                        resampled
+                    } else {
+                        continue;
+                    }
+                } else {
+                    aframe.clone()
+                };
+
+                if let Some(pts) = frame_to_encode.pts() {
+                    let rescaled = pts.rescale(ist_tb, ost_tb);
+                    let offset_pts = rescaled + pts_offsets[a_ost_idx];
+                    let mut offset_frame = frame_to_encode;
+                    offset_frame.set_pts(Some(offset_pts));
+                    last_pts[a_ost_idx] = offset_pts;
+                    last_duration[a_ost_idx] = 1;
+                    let _ = a_enc.send_frame(&offset_frame);
+                } else {
+                    let _ = a_enc.send_frame(&frame_to_encode);
+                }
                 drain_audio_encoder(a_enc, a_ost_idx, &mut octx);
             }
+
+            // Flush resampler delay.
+            if let Some(r) = resampler {
+                let mut delay = frame::Audio::empty();
+                while r.flush(&mut delay).is_ok() && delay.samples() > 0 {
+                    let _ = a_enc.send_frame(&delay);
+                    drain_audio_encoder(a_enc, a_ost_idx, &mut octx);
+                }
+            }
+
+            let _ = a_enc.send_eof();
+            drain_audio_encoder(a_enc, a_ost_idx, &mut octx);
         }
     }
 

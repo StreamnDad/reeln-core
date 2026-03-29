@@ -157,16 +157,17 @@ impl HookHandler for LoadedPlugin {
         };
 
         // If the plugin wrote updated shared state, parse it back.
-        if bytes_written > 0 && bytes_written < SHARED_BUF_SIZE {
-            if let Ok(updated_str) = std::str::from_utf8(&shared_out[..bytes_written]) {
-                if let Ok(updated) = serde_json::from_str(updated_str) {
-                    context.shared = updated;
-                } else {
-                    log::warn!(
-                        "Plugin '{}' returned invalid JSON for shared state",
-                        self.name
-                    );
-                }
+        if bytes_written > 0
+            && bytes_written < SHARED_BUF_SIZE
+            && let Ok(updated_str) = std::str::from_utf8(&shared_out[..bytes_written])
+        {
+            if let Ok(updated) = serde_json::from_str(updated_str) {
+                context.shared = updated;
+            } else {
+                log::warn!(
+                    "Plugin '{}' returned invalid JSON for shared state",
+                    self.name
+                );
             }
         }
     }
