@@ -28,7 +28,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavfilter-dev \
+          sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavfilter-dev \
             libavdevice-dev libavutil-dev libswscale-dev libswresample-dev pkg-config
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -50,7 +50,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavfilter-dev \
+          sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavfilter-dev \
             libavdevice-dev libavutil-dev libswscale-dev libswresample-dev pkg-config
       - name: Install maturin
         run: pip install maturin
