@@ -18,10 +18,8 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            manylinux: "off"
           - os: macos-latest
             target: aarch64-apple-darwin
-            manylinux: "off"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,13 +27,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install system dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg libavcodec-dev libavformat-dev libavfilter-dev \
-            libavdevice-dev libavutil-dev libswscale-dev libswresample-dev pkg-config
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -45,7 +36,23 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist -m crates/reeln-python/Cargo.toml
-          manylinux: ${{ matrix.manylinux }}
+          manylinux: ${{ runner.os == 'Linux' && 'manylinux_2_28' || 'off' }}
+          before-script-linux: |
+            set -eux
+            dnf install -y nasm yasm diffutils pkgconfig curl xz
+            curl -sL https://ffmpeg.org/releases/ffmpeg-7.0.2.tar.xz -o /tmp/ffmpeg.tar.xz
+            tar xf /tmp/ffmpeg.tar.xz -C /tmp
+            cd /tmp/ffmpeg-7.0.2
+            ./configure \
+              --prefix=/usr/local \
+              --enable-shared \
+              --disable-static \
+              --disable-doc \
+              --disable-programs
+            make -j$(nproc)
+            make install
+            ldconfig
+            export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH:-}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -83,3 +90,4 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+          verbose: true
