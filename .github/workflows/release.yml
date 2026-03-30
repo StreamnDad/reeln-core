@@ -39,7 +39,7 @@ jobs:
           manylinux: ${{ runner.os == 'Linux' && 'manylinux_2_28' || 'off' }}
           before-script-linux: |
             set -eux
-            dnf install -y nasm yasm diffutils pkgconfig curl xz
+            dnf install -y nasm yasm diffutils pkgconfig curl xz clang-devel
             curl -sL https://ffmpeg.org/releases/ffmpeg-7.0.2.tar.xz -o /tmp/ffmpeg.tar.xz
             tar xf /tmp/ffmpeg.tar.xz -C /tmp
             (
