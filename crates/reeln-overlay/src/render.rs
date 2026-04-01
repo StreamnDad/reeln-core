@@ -59,7 +59,7 @@ fn render_layer(
             let w = resolve_dim(&bounds.w, canvas_w, context)?;
             let h = resolve_dim(&bounds.h, canvas_h, context)?;
 
-            let (r, g, b, a) = parse_element_color(fill)?;
+            let (r, g, b, a) = parse_element_color(fill, context)?;
             let mut paint = Paint::default();
             let alpha = (a as f32 / 255.0) * opacity;
             paint.set_color(
@@ -86,7 +86,7 @@ fn render_layer(
 
             // Render border if specified.
             if let Some(border) = border {
-                render_border(pixmap, x, y, w, h, *corner_radius, border)?;
+                render_border(pixmap, x, y, w, h, *corner_radius, border, context)?;
             }
         }
         Element::Text {
@@ -114,6 +114,16 @@ fn render_layer(
             let x = resolve_dim(&position.x, canvas_w, context)?;
             let y = resolve_dim(&position.y, canvas_h, context)?;
 
+            // Substitute variables in color strings before rendering text
+            let resolved_color = match color {
+                elements::Color::Hex(s) => elements::Color::Hex(template::substitute_variables(s, context)),
+            };
+            let resolved_outline = outline.as_ref().map(|o| elements::OutlineSpec {
+                color: match &o.color {
+                    elements::Color::Hex(s) => elements::Color::Hex(template::substitute_variables(s, context)),
+                },
+                width: o.width,
+            });
             text::render_text_to_pixmap(
                 pixmap,
                 &resolved,
@@ -122,11 +132,11 @@ fn render_layer(
                 &font.family,
                 font.size,
                 font.weight.as_deref(),
-                color,
+                &resolved_color,
                 alignment,
                 *max_width,
                 font.auto_shrink,
-                outline.as_ref(),
+                resolved_outline.as_ref(),
             )?;
         }
         Element::Image {
@@ -170,7 +180,7 @@ fn render_layer(
                 return Ok(());
             }
 
-            render_gradient(pixmap, &GradientParams { x, y, w, h }, stops, direction)?;
+            render_gradient(pixmap, &GradientParams { x, y, w, h }, stops, direction, context)?;
         }
     }
     Ok(())
@@ -188,6 +198,7 @@ fn render_gradient(
     params: &GradientParams,
     stops: &[elements::GradientStop],
     direction: &GradientDirection,
+    context: &TemplateContext,
 ) -> Result<(), OverlayError> {
     let GradientParams { x, y, w, h } = *params;
     let x_start = x as u32;
@@ -202,7 +213,7 @@ fn render_gradient(
     let parsed_stops: Vec<(f32, u8, u8, u8, u8)> = stops
         .iter()
         .map(|s| {
-            let (r, g, b, a) = parse_element_color(&s.color)?;
+            let (r, g, b, a) = parse_element_color(&s.color, context)?;
             Ok((s.position, r, g, b, a))
         })
         .collect::<Result<Vec<_>, OverlayError>>()?;
@@ -284,9 +295,12 @@ fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
     (a as f32 + (b as f32 - a as f32) * t).round() as u8
 }
 
-fn parse_element_color(color: &elements::Color) -> Result<(u8, u8, u8, u8), OverlayError> {
+fn parse_element_color(color: &elements::Color, context: &TemplateContext) -> Result<(u8, u8, u8, u8), OverlayError> {
     match color {
-        elements::Color::Hex(s) => elements::parse_color(s),
+        elements::Color::Hex(s) => {
+            let resolved = template::substitute_variables(s, context);
+            elements::parse_color(&resolved)
+        }
     }
 }
 
@@ -440,8 +454,9 @@ fn render_border(
     h: f32,
     corner_radius: f32,
     border: &elements::Border,
+    context: &TemplateContext,
 ) -> Result<(), OverlayError> {
-    let (r, g, b, a) = parse_element_color(&border.color)?;
+    let (r, g, b, a) = parse_element_color(&border.color, context)?;
     let mut paint = Paint::default();
     paint.set_color(
         Color::from_rgba(
