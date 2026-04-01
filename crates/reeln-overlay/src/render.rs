@@ -33,6 +33,12 @@ pub fn render_template_to_png(
     Ok(())
 }
 
+/// Substitute template variables in a dimension string, then resolve to pixels.
+fn resolve_dim(value: &str, container_size: u32, context: &TemplateContext) -> Result<f32, OverlayError> {
+    let resolved = template::substitute_variables(value, context);
+    resolve_dimension(&resolved, container_size)
+}
+
 fn render_layer(
     pixmap: &mut Pixmap,
     layer: &Element,
@@ -48,10 +54,10 @@ fn render_layer(
             border,
             opacity,
         } => {
-            let x = resolve_dimension(&bounds.x, canvas_w)?;
-            let y = resolve_dimension(&bounds.y, canvas_h)?;
-            let w = resolve_dimension(&bounds.w, canvas_w)?;
-            let h = resolve_dimension(&bounds.h, canvas_h)?;
+            let x = resolve_dim(&bounds.x, canvas_w, context)?;
+            let y = resolve_dim(&bounds.y, canvas_h, context)?;
+            let w = resolve_dim(&bounds.w, canvas_w, context)?;
+            let h = resolve_dim(&bounds.h, canvas_h, context)?;
 
             let (r, g, b, a) = parse_element_color(fill)?;
             let mut paint = Paint::default();
@@ -105,8 +111,8 @@ fn render_layer(
                 return Ok(());
             }
 
-            let x = resolve_dimension(&position.x, canvas_w)?;
-            let y = resolve_dimension(&position.y, canvas_h)?;
+            let x = resolve_dim(&position.x, canvas_w, context)?;
+            let y = resolve_dim(&position.y, canvas_h, context)?;
 
             text::render_text_to_pixmap(
                 pixmap,
@@ -130,10 +136,10 @@ fn render_layer(
             fit,
             opacity,
         } => {
-            let x = resolve_dimension(&position.x, canvas_w)?;
-            let y = resolve_dimension(&position.y, canvas_h)?;
-            let w = resolve_dimension(&size.w, canvas_w)?;
-            let h = resolve_dimension(&size.h, canvas_h)?;
+            let x = resolve_dim(&position.x, canvas_w, context)?;
+            let y = resolve_dim(&position.y, canvas_h, context)?;
+            let w = resolve_dim(&size.w, canvas_w, context)?;
+            let h = resolve_dim(&size.h, canvas_h, context)?;
 
             let path_str = match source {
                 ImageSource::File(p) => p.to_string_lossy().to_string(),
@@ -155,10 +161,10 @@ fn render_layer(
             direction,
             corner_radius: _,
         } => {
-            let x = resolve_dimension(&bounds.x, canvas_w)?;
-            let y = resolve_dimension(&bounds.y, canvas_h)?;
-            let w = resolve_dimension(&bounds.w, canvas_w)?;
-            let h = resolve_dimension(&bounds.h, canvas_h)?;
+            let x = resolve_dim(&bounds.x, canvas_w, context)?;
+            let y = resolve_dim(&bounds.y, canvas_h, context)?;
+            let w = resolve_dim(&bounds.w, canvas_w, context)?;
+            let h = resolve_dim(&bounds.h, canvas_h, context)?;
 
             if stops.len() < 2 || w <= 0.0 || h <= 0.0 {
                 return Ok(());
