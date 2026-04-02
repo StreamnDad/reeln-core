@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+
+echo "pre-commit: cargo fmt --check"
+cargo fmt --all --check
+
+echo "pre-commit: cargo clippy"
+cargo clippy --all-targets -- -D warnings 2>&1
+
+echo "pre-commit: checks passed"
