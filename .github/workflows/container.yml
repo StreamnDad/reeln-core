@@ -2,6 +2,7 @@ name: Build manylinux container
 
 on:
   push:
+    branches: [main]
     paths:
       - ".github/manylinux.Dockerfile"
   workflow_dispatch:
