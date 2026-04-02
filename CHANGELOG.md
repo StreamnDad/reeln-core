@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-02
+
+### Fixed
+
+- Pre-built wheels now published for Python 3.11, 3.12, and 3.13 (previously
+  only 3.12 wheels existed, forcing source builds that fail without ffmpeg dev libs).
+- Clippy and rustfmt CI failures from template variable substitution commits.
+
+### Changed
+
+- Enriched PyPI metadata: classifiers, keywords, authors, changelog/issues URLs.
+- Added pre-commit hook enforcing `cargo fmt` and `cargo clippy -D warnings`.
+
 ## [0.2.0] - 2026-04-02
 
 ### Removed
