@@ -29,7 +29,7 @@ reeln-core (Rust workspace)
 | `reeln-config` | 61 | `dirs`, `serde_json` | Config loading, merge, env overrides |
 | `reeln-plugin` | 107 | `libloading` | Hook emission, plugin discovery |
 | `reeln-ffi` | 37 | All `reeln-*` crates | C ABI exports |
-| `reeln-python` | — | `pyo3` 0.23 | Python extension module |
+| `reeln-python` | — | `pyo3` 0.24 | Python extension module |
 | **Total** | **584** | | |
 
 ## Prerequisites
@@ -166,7 +166,8 @@ cargo build -p reeln-ffi --release
 
 ## Versioning
 
-- Workspace version: **0.1.0** (all crates share this version)
+- Workspace version: **0.2.0** (all crates share this version)
 - reeln-cli declares `reeln-native >= 0.1.0, < 1.0` as optional dependency
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Semantic versioning: MAJOR.MINOR.PATCH
 - Releases are tag-triggered (`v*` pattern)

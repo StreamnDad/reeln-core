@@ -5,13 +5,33 @@ build-backend = "maturin"
 [project]
 name = "reeln-native"
 requires-python = ">=3.11"
-description = "Rust-powered native backend for the reeln CLI"
+description = "Rust-powered native backend for the reeln CLI — media processing, overlay rendering, and game state via libav* bindings"
 license = "AGPL-3.0-only"
 dynamic = ["version"]
+authors = [
+    { name = "StreamnDad", email = "hello@streamn.dad" },
+]
+keywords = ["video", "ffmpeg", "libav", "overlay", "sports", "highlight", "rendering"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Video",
+]
 
 [project.urls]
 Homepage = "https://streamn.dad"
 Repository = "https://github.com/StreamnDad/reeln-core"
+Changelog = "https://github.com/StreamnDad/reeln-core/blob/main/CHANGELOG.md"
+Issues = "https://github.com/StreamnDad/reeln-core/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
