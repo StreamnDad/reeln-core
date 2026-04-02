@@ -463,6 +463,7 @@ fn render_image(
 // ── Border rendering ────────────────────────────────────────────────
 
 /// Render a border stroke around a rectangle.
+#[allow(clippy::too_many_arguments)]
 fn render_border(
     pixmap: &mut Pixmap,
     x: f32,
