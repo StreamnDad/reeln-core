@@ -5,9 +5,6 @@ use serde::{Deserialize, Serialize};
 
 // ── Default value helpers ────────────────────────────────────────────
 
-fn default_ffmpeg_path() -> String {
-    "ffmpeg".to_string()
-}
 fn default_codec() -> String {
     "libx264".to_string()
 }
@@ -56,8 +53,6 @@ fn is_zero_u32(v: &u32) -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VideoConfig {
-    #[serde(default = "default_ffmpeg_path")]
-    pub ffmpeg_path: String,
     #[serde(default = "default_codec")]
     pub codec: String,
     #[serde(default = "default_preset")]
@@ -73,7 +68,6 @@ pub struct VideoConfig {
 impl Default for VideoConfig {
     fn default() -> Self {
         Self {
-            ffmpeg_path: default_ffmpeg_path(),
             codec: default_codec(),
             preset: default_preset(),
             crf: default_crf(),
@@ -334,7 +328,6 @@ mod tests {
     #[test]
     fn test_video_config_defaults() {
         let v = VideoConfig::default();
-        assert_eq!(v.ffmpeg_path, "ffmpeg");
         assert_eq!(v.codec, "libx264");
         assert_eq!(v.preset, "medium");
         assert_eq!(v.crf, 18);

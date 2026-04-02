@@ -1,6 +1,4 @@
-use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 
 use ffmpeg_next::{
     ChannelLayout, Dictionary, Packet, Rational, Rescale, codec, decoder, encoder, format, frame,
@@ -12,8 +10,7 @@ use crate::{ConcatOptions, MediaError};
 /// Concatenate media segments into a single output file using native libav* APIs.
 ///
 /// In copy mode, packets are remuxed directly (no re-encode).
-/// In re-encode mode, falls back to subprocess ffmpeg (full native re-encode
-/// concat is a future enhancement).
+/// In re-encode mode, uses native decode/encode pipeline.
 pub fn concat_native(
     segments: &[&Path],
     output: &Path,
@@ -26,23 +23,6 @@ pub fn concat_native(
     } else {
         concat_reencode(segments, output, opts)
     }
-}
-
-/// Concatenate media segments using the ffmpeg subprocess (Phase 1a fallback).
-pub fn concat_subprocess(
-    segments: &[&Path],
-    output: &Path,
-    opts: &ConcatOptions,
-) -> Result<(), MediaError> {
-    validate_segments(segments)?;
-
-    let concat_list = build_concat_file(segments)?;
-    let args = build_concat_args(&concat_list, output, opts);
-
-    run_ffmpeg(&args).map_err(|e| MediaError::Concat(format!("ffmpeg concat failed: {e}")))?;
-
-    let _ = std::fs::remove_file(&concat_list);
-    Ok(())
 }
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -717,85 +697,10 @@ fn drain_audio_encoder(
     }
 }
 
-// ── Subprocess helpers (kept for SubprocessBackend) ─────────────────
-
-/// Build a concat demuxer list file and return its path.
-fn build_concat_file(segments: &[&Path]) -> Result<String, MediaError> {
-    let mut tmp = tempfile::NamedTempFile::new()
-        .map_err(|e| MediaError::Concat(format!("failed to create temp file: {e}")))?;
-
-    for seg in segments {
-        writeln!(tmp, "file '{}'", seg.display())
-            .map_err(|e| MediaError::Concat(format!("failed to write concat list: {e}")))?;
-    }
-
-    let path = tmp.into_temp_path();
-    let path_str = path.to_str().unwrap_or("").to_string();
-    path.keep()
-        .map_err(|e| MediaError::Concat(format!("failed to persist temp file: {e}")))?;
-
-    Ok(path_str)
-}
-
-/// Build ffmpeg CLI arguments for the concat operation.
-pub(crate) fn build_concat_args(
-    concat_file: &str,
-    output: &Path,
-    opts: &ConcatOptions,
-) -> Vec<String> {
-    let mut args = vec![
-        "-y".to_string(),
-        "-f".to_string(),
-        "concat".to_string(),
-        "-safe".to_string(),
-        "0".to_string(),
-        "-i".to_string(),
-        concat_file.to_string(),
-    ];
-
-    if opts.copy {
-        args.extend(["-c".to_string(), "copy".to_string()]);
-    } else {
-        args.extend([
-            "-c:v".to_string(),
-            opts.video_codec.clone(),
-            "-crf".to_string(),
-            opts.crf.to_string(),
-            "-c:a".to_string(),
-            opts.audio_codec.clone(),
-            "-ar".to_string(),
-            opts.audio_rate.to_string(),
-        ]);
-    }
-
-    args.push(output.display().to_string());
-    args
-}
-
-/// Run ffmpeg with the given arguments.
-fn run_ffmpeg(args: &[String]) -> Result<(), String> {
-    let output = Command::new("ffmpeg")
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .map_err(|e| format!("failed to spawn ffmpeg: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
-            "ffmpeg exited with {}: {}",
-            output.status,
-            stderr.lines().last().unwrap_or("unknown error")
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     fn default_copy_opts() -> ConcatOptions {
         ConcatOptions {
@@ -868,128 +773,6 @@ mod tests {
         let f = dir.path().join("ok.mp4");
         std::fs::write(&f, b"dummy").unwrap();
         assert!(validate_segments(&[f.as_path()]).is_ok());
-    }
-
-    // ── Subprocess tests (kept for SubprocessBackend) ───────────────
-
-    #[test]
-    fn test_build_concat_args_copy_mode() {
-        let opts = default_copy_opts();
-        let args = build_concat_args("/tmp/list.txt", Path::new("/tmp/out.mp4"), &opts);
-
-        assert!(args.contains(&"-y".to_string()));
-        assert!(args.contains(&"concat".to_string()));
-        assert!(args.contains(&"copy".to_string()));
-        assert!(!args.contains(&"-crf".to_string()));
-    }
-
-    #[test]
-    fn test_build_concat_args_reencode_mode() {
-        let opts = default_reencode_opts();
-        let args = build_concat_args("/tmp/list.txt", Path::new("/tmp/out.mp4"), &opts);
-
-        assert!(args.contains(&"libx264".to_string()));
-        assert!(args.contains(&"18".to_string()));
-        assert!(args.contains(&"aac".to_string()));
-        assert!(args.contains(&"44100".to_string()));
-        assert!(!args.contains(&"copy".to_string()));
-    }
-
-    #[test]
-    fn test_build_concat_args_output_path() {
-        let opts = default_copy_opts();
-        let args = build_concat_args("/tmp/list.txt", Path::new("/output/video.mp4"), &opts);
-        assert_eq!(args.last().unwrap(), "/output/video.mp4");
-    }
-
-    #[test]
-    fn test_build_concat_args_safe_flag() {
-        let opts = default_copy_opts();
-        let args = build_concat_args("/tmp/list.txt", Path::new("/tmp/out.mp4"), &opts);
-        let safe_idx = args.iter().position(|a| a == "-safe").unwrap();
-        assert_eq!(args[safe_idx + 1], "0");
-    }
-
-    #[test]
-    fn test_build_concat_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let seg1 = dir.path().join("a.mp4");
-        let seg2 = dir.path().join("b.mp4");
-        let segments: Vec<&Path> = vec![seg1.as_path(), seg2.as_path()];
-
-        let path = build_concat_file(&segments).unwrap();
-        let contents = std::fs::read_to_string(&path).unwrap();
-        assert!(contents.contains("file '"));
-        assert!(contents.contains("a.mp4"));
-        assert!(contents.contains("b.mp4"));
-
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn test_run_ffmpeg_failure() {
-        let result = run_ffmpeg(&[
-            "-i".to_string(),
-            "/nonexistent/file.mp4".to_string(),
-            "/tmp/impossible_output.mp4".to_string(),
-        ]);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("ffmpeg exited with"));
-    }
-
-    // ── Subprocess integration tests ────────────────────────────────
-
-    #[test]
-    fn test_concat_subprocess_empty_segments() {
-        let opts = default_copy_opts();
-        let result = concat_subprocess(&[], Path::new("/tmp/out.mp4"), &opts);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_concat_subprocess_copy_integration() {
-        let dir = tempfile::tempdir().unwrap();
-        let seg1 = dir.path().join("seg1.mp4");
-        let seg2 = dir.path().join("seg2.mp4");
-        create_test_video(&seg1);
-        create_test_video(&seg2);
-
-        let output = dir.path().join("out.mp4");
-        let opts = default_copy_opts();
-        let result = concat_subprocess(&[seg1.as_path(), seg2.as_path()], &output, &opts);
-        assert!(result.is_ok(), "concat failed: {result:?}");
-        assert!(output.exists());
-        assert!(output.metadata().unwrap().len() > 0);
-    }
-
-    #[test]
-    fn test_concat_subprocess_reencode_integration() {
-        let dir = tempfile::tempdir().unwrap();
-        let seg1 = dir.path().join("seg1.mp4");
-        create_test_video(&seg1);
-
-        let output = dir.path().join("out_reencode.mp4");
-        let opts = default_reencode_opts();
-        let result = concat_subprocess(&[seg1.as_path()], &output, &opts);
-        assert!(result.is_ok(), "concat reencode failed: {result:?}");
-        assert!(output.exists());
-    }
-
-    #[test]
-    fn test_concat_subprocess_invalid_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let bad_seg = dir.path().join("bad.mp4");
-        std::fs::write(&bad_seg, b"not a video").unwrap();
-
-        let output = dir.path().join("out.mp4");
-        let opts = default_copy_opts();
-        let result = concat_subprocess(&[bad_seg.as_path()], &output, &opts);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            MediaError::Concat(msg) => assert!(msg.contains("ffmpeg concat failed")),
-            other => panic!("expected Concat error, got {other:?}"),
-        }
     }
 
     // ── Native concat tests ─────────────────────────────────────────

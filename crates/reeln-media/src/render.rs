@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::process::Command;
 
 use ffmpeg_next::{
     ChannelLayout, Dictionary, Packet, Rational, codec, decoder, encoder, format, frame, media,
@@ -9,8 +8,6 @@ use ffmpeg_next::{
 use crate::{MediaError, RenderPlan, RenderResult, probe};
 
 /// Execute a render plan using native libav* APIs (decode → filter → encode).
-///
-/// Falls back to subprocess for unsupported codecs.
 pub fn render_native(plan: &RenderPlan) -> Result<RenderResult, MediaError> {
     if !plan.input.exists() {
         return Err(MediaError::Render(format!(
@@ -20,27 +17,6 @@ pub fn render_native(plan: &RenderPlan) -> Result<RenderResult, MediaError> {
     }
 
     transcode(plan)?;
-
-    let info = probe::probe(&plan.output)?;
-    let duration_secs = info.duration_secs.unwrap_or(0.0);
-
-    Ok(RenderResult {
-        output: plan.output.clone(),
-        duration_secs,
-    })
-}
-
-/// Execute a render plan using the ffmpeg subprocess (Phase 1a fallback).
-pub fn render_subprocess(plan: &RenderPlan) -> Result<RenderResult, MediaError> {
-    if !plan.input.exists() {
-        return Err(MediaError::Render(format!(
-            "input does not exist: {}",
-            plan.input.display()
-        )));
-    }
-
-    let args = build_render_args(plan);
-    run_ffmpeg(&args).map_err(|e| MediaError::Render(format!("ffmpeg render failed: {e}")))?;
 
     let info = probe::probe(&plan.output)?;
     let duration_secs = info.duration_secs.unwrap_or(0.0);
@@ -235,8 +211,21 @@ impl VideoTranscoder {
         enc.set_width(enc_width);
         enc.set_aspect_ratio(dec.aspect_ratio());
         enc.set_format(enc_format);
-        enc.set_frame_rate(dec.frame_rate());
-        enc.set_time_base(ist.time_base());
+        let frame_rate = dec.frame_rate();
+        enc.set_frame_rate(frame_rate);
+        // Use the inverse of the frame rate as time_base so the output
+        // stream's r_frame_rate matches the actual fps.  Using the input
+        // stream's container time_base (e.g. 1/90000) causes bogus
+        // r_frame_rate metadata that breaks xfade concat.
+        if let Some(fr) = frame_rate {
+            if fr.numerator() != 0 {
+                enc.set_time_base(Rational(fr.denominator(), fr.numerator()));
+            } else {
+                enc.set_time_base(ist.time_base());
+            }
+        } else {
+            enc.set_time_base(ist.time_base());
+        }
 
         if global_header {
             enc.set_flags(codec::Flags::GLOBAL_HEADER);
@@ -250,6 +239,22 @@ impl VideoTranscoder {
             .open_with(opts)
             .map_err(|e| MediaError::Render(format!("open encoder: {e}")))?;
         ost.set_parameters(&opened);
+
+        // Set the output stream's r_frame_rate so downstream consumers
+        // (e.g. xfade concat) see the correct frame rate, not the
+        // container time_base.
+        if let Some(fr) = frame_rate {
+            unsafe {
+                (*ost.as_mut_ptr()).r_frame_rate = ffmpeg_next::sys::AVRational {
+                    num: fr.numerator(),
+                    den: fr.denominator(),
+                };
+                (*ost.as_mut_ptr()).avg_frame_rate = ffmpeg_next::sys::AVRational {
+                    num: fr.numerator(),
+                    den: fr.denominator(),
+                };
+            }
+        }
 
         Ok(Self {
             ost_index,
@@ -677,12 +682,19 @@ fn parse_output_dimensions(filter_spec: &str, dec_w: u32, dec_h: u32) -> (u32, u
     // come from the color source's `s=WxH` parameter.
     if filter_spec.contains("color=") && filter_spec.contains("overlay") {
         for segment in filter_spec.split(';') {
-            let trimmed = segment.trim().trim_start_matches(|c: char| {
-                c == '[' || c.is_alphanumeric() || c == ':' || c == ']' || c == '_'
-            });
-            if trimmed.starts_with("color=") {
+            // Strip leading [label] patterns (e.g. "[_bg]", "[0:v]") but
+            // preserve the filter name itself.
+            let mut s = segment.trim();
+            while s.starts_with('[') {
+                if let Some(end) = s.find(']') {
+                    s = s[end + 1..].trim_start();
+                } else {
+                    break;
+                }
+            }
+            if s.starts_with("color=") {
                 // Parse s=WxH from color filter params.
-                for param in trimmed.split(':') {
+                for param in s.split(':') {
                     if let Some(size) = param.strip_prefix("s=") {
                         let parts: Vec<&str> = size.split('x').collect();
                         if parts.len() == 2
@@ -698,6 +710,8 @@ fn parse_output_dimensions(filter_spec: &str, dec_w: u32, dec_h: u32) -> (u32, u
     }
 
     // Check for scale=W:H in simple filter chains.
+    // Handles ffmpeg auto-dimension syntax: -1 (exact aspect ratio) and -N (rounded
+    // to nearest multiple of N, e.g. -2 for even alignment).
     for part in filter_spec.split(',') {
         let trimmed = part.trim();
         // Handle scale after semicolons too (e.g. [label]scale=...)
@@ -708,14 +722,50 @@ fn parse_output_dimensions(filter_spec: &str, dec_w: u32, dec_h: u32) -> (u32, u
         };
         if let Some(args) = scale_part.strip_prefix("scale=") {
             let parts: Vec<&str> = args.split(':').collect();
-            if parts.len() >= 2
-                && let (Ok(w), Ok(h)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
-            {
-                return (w, h);
+            if parts.len() >= 2 {
+                let w_parsed = parts[0].parse::<i32>();
+                let h_parsed = parts[1].parse::<i32>();
+                if let (Ok(w), Ok(h)) = (w_parsed, h_parsed) {
+                    return resolve_scale_dimensions(w, h, dec_w, dec_h);
+                }
             }
         }
     }
     (dec_w, dec_h)
+}
+
+/// Resolve ffmpeg scale dimensions, handling auto-dimension syntax.
+///
+/// Positive values are used as-is. Negative values trigger auto-calculation:
+/// - `-1`: compute from the other dimension maintaining exact aspect ratio
+/// - `-N` (e.g. `-2`): compute from the other dimension, rounded to nearest multiple of N
+///
+/// Both dimensions negative is invalid — returns decoder dimensions unchanged.
+fn resolve_scale_dimensions(w: i32, h: i32, dec_w: u32, dec_h: u32) -> (u32, u32) {
+    match (w, h) {
+        (w, h) if w > 0 && h > 0 => (w as u32, h as u32),
+        (w, h) if w > 0 && h < 0 => {
+            let align = (-h) as u32;
+            let computed = (dec_h as u64 * w as u64 / dec_w as u64) as u32;
+            let aligned = if align > 1 {
+                computed.div_ceil(align) * align
+            } else {
+                computed
+            };
+            (w as u32, aligned)
+        }
+        (w, h) if w < 0 && h > 0 => {
+            let align = (-w) as u32;
+            let computed = (dec_w as u64 * h as u64 / dec_h as u64) as u32;
+            let aligned = if align > 1 {
+                computed.div_ceil(align) * align
+            } else {
+                computed
+            };
+            (aligned, h as u32)
+        }
+        _ => (dec_w, dec_h),
+    }
 }
 
 /// Normalize a filter spec for native graph execution.
@@ -805,72 +855,11 @@ fn build_video_filter_graph(
     Ok(graph)
 }
 
-// ── Subprocess helpers ──────────────────────────────────────────────
-
-/// Build ffmpeg CLI arguments from a render plan.
-pub(crate) fn build_render_args(plan: &RenderPlan) -> Vec<String> {
-    let mut args = vec![
-        "-y".to_string(),
-        "-i".to_string(),
-        plan.input.display().to_string(),
-    ];
-
-    if let Some(ref fc) = plan.filter_complex {
-        args.extend(["-filter_complex".to_string(), fc.clone()]);
-    } else if !plan.filters.is_empty() {
-        args.extend(["-vf".to_string(), plan.filters.join(",")]);
-    }
-
-    if let Some(ref af) = plan.audio_filter {
-        args.extend(["-af".to_string(), af.clone()]);
-    }
-
-    args.extend([
-        "-c:v".to_string(),
-        plan.video_codec.clone(),
-        "-crf".to_string(),
-        plan.crf.to_string(),
-    ]);
-
-    if let Some(ref preset) = plan.preset {
-        args.extend(["-preset".to_string(), preset.clone()]);
-    }
-
-    args.extend(["-c:a".to_string(), plan.audio_codec.clone()]);
-
-    if let Some(bitrate) = plan.audio_bitrate {
-        args.extend(["-b:a".to_string(), format!("{bitrate}k")]);
-    }
-
-    args.push(plan.output.display().to_string());
-    args
-}
-
-/// Run ffmpeg with the given arguments.
-fn run_ffmpeg(args: &[String]) -> Result<(), String> {
-    let output = Command::new("ffmpeg")
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .map_err(|e| format!("failed to spawn ffmpeg: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
-            "ffmpeg exited with {}: {}",
-            output.status,
-            stderr.lines().last().unwrap_or("unknown error")
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
 
     fn create_test_video(path: &Path) {
         let status = Command::new("ffmpeg")
@@ -906,126 +895,6 @@ mod tests {
             filter_complex: None,
             audio_filter: None,
         }
-    }
-
-    // ── Subprocess render tests ─────────────────────────────────────
-
-    #[test]
-    fn test_build_render_args_no_filters() {
-        let plan = default_plan(PathBuf::from("/in.mp4"), PathBuf::from("/out.mp4"));
-        let args = build_render_args(&plan);
-
-        assert!(args.contains(&"-y".to_string()));
-        assert!(args.contains(&"/in.mp4".to_string()));
-        assert!(args.contains(&"libx264".to_string()));
-        assert!(args.contains(&"23".to_string()));
-        assert!(!args.contains(&"-vf".to_string()));
-        assert_eq!(args.last().unwrap(), "/out.mp4");
-    }
-
-    #[test]
-    fn test_build_render_args_with_filters() {
-        let plan = RenderPlan {
-            input: PathBuf::from("/in.mp4"),
-            output: PathBuf::from("/out.mp4"),
-            video_codec: "libx264".to_string(),
-            crf: 18,
-            preset: None,
-            audio_codec: "aac".to_string(),
-            audio_bitrate: None,
-            filters: vec!["scale=1920:1080".to_string(), "fps=30".to_string()],
-            filter_complex: None,
-            audio_filter: None,
-        };
-        let args = build_render_args(&plan);
-
-        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
-        assert_eq!(args[vf_idx + 1], "scale=1920:1080,fps=30");
-    }
-
-    #[test]
-    fn test_render_subprocess_nonexistent_input() {
-        let plan = default_plan(
-            PathBuf::from("/tmp/nonexistent_render_input.mp4"),
-            PathBuf::from("/tmp/render_out.mp4"),
-        );
-        let result = render_subprocess(&plan);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            MediaError::Render(msg) => assert!(msg.contains("does not exist")),
-            other => panic!("expected Render error, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_render_subprocess_integration() {
-        let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("input.mp4");
-        create_test_video(&input);
-
-        let output = dir.path().join("output.mp4");
-        let plan = default_plan(input, output.clone());
-        let result = render_subprocess(&plan).unwrap();
-
-        assert_eq!(result.output, output);
-        assert!(result.duration_secs > 0.0);
-        assert!(output.exists());
-    }
-
-    #[test]
-    fn test_render_subprocess_with_filter() {
-        let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("input_filter.mp4");
-        create_test_video(&input);
-
-        let output = dir.path().join("output_filter.mp4");
-        let plan = RenderPlan {
-            input,
-            output: output.clone(),
-            video_codec: "libx264".to_string(),
-            crf: 23,
-            preset: None,
-            audio_codec: "aac".to_string(),
-            audio_bitrate: None,
-            filters: vec!["scale=80:60".to_string()],
-            filter_complex: None,
-            audio_filter: None,
-        };
-
-        let result = render_subprocess(&plan).unwrap();
-        assert!(result.duration_secs > 0.0);
-
-        let info = probe::probe(&output).unwrap();
-        assert_eq!(info.width, Some(80));
-        assert_eq!(info.height, Some(60));
-    }
-
-    #[test]
-    fn test_render_subprocess_invalid_input() {
-        let dir = tempfile::tempdir().unwrap();
-        let bad_input = dir.path().join("bad_input.mp4");
-        std::fs::write(&bad_input, b"not a video").unwrap();
-
-        let output = dir.path().join("render_bad_out.mp4");
-        let plan = default_plan(bad_input, output);
-        let result = render_subprocess(&plan);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            MediaError::Render(msg) => assert!(msg.contains("ffmpeg render failed")),
-            other => panic!("expected Render error, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn test_run_ffmpeg_failure() {
-        let result = run_ffmpeg(&[
-            "-i".to_string(),
-            "/nonexistent/render_input.mp4".to_string(),
-            "/tmp/impossible_render_output.mp4".to_string(),
-        ]);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.contains("ffmpeg exited with"));
     }
 
     // ── Native render tests ─────────────────────────────────────────
@@ -1126,116 +995,6 @@ mod tests {
         assert!(debug.contains("RenderResult"));
     }
 
-    #[test]
-    fn test_build_render_args_codec_and_crf() {
-        let plan = RenderPlan {
-            input: PathBuf::from("/in.mp4"),
-            output: PathBuf::from("/out.mp4"),
-            video_codec: "libx265".to_string(),
-            crf: 28,
-            preset: None,
-            audio_codec: "libopus".to_string(),
-            audio_bitrate: None,
-            filters: vec![],
-            filter_complex: None,
-            audio_filter: None,
-        };
-        let args = build_render_args(&plan);
-
-        let cv_idx = args.iter().position(|a| a == "-c:v").unwrap();
-        assert_eq!(args[cv_idx + 1], "libx265");
-
-        let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
-        assert_eq!(args[crf_idx + 1], "28");
-
-        let ca_idx = args.iter().position(|a| a == "-c:a").unwrap();
-        assert_eq!(args[ca_idx + 1], "libopus");
-    }
-
-    // ── Preset and audio bitrate tests ─────────────────────────────
-
-    #[test]
-    fn test_build_render_args_with_preset() {
-        let plan = RenderPlan {
-            input: PathBuf::from("/in.mp4"),
-            output: PathBuf::from("/out.mp4"),
-            video_codec: "libx264".to_string(),
-            crf: 23,
-            preset: Some("fast".to_string()),
-            audio_codec: "aac".to_string(),
-            audio_bitrate: None,
-            filters: vec![],
-            filter_complex: None,
-            audio_filter: None,
-        };
-        let args = build_render_args(&plan);
-
-        let preset_idx = args.iter().position(|a| a == "-preset").unwrap();
-        assert_eq!(args[preset_idx + 1], "fast");
-    }
-
-    #[test]
-    fn test_build_render_args_with_audio_bitrate() {
-        let plan = RenderPlan {
-            input: PathBuf::from("/in.mp4"),
-            output: PathBuf::from("/out.mp4"),
-            video_codec: "libx264".to_string(),
-            crf: 23,
-            preset: None,
-            audio_codec: "aac".to_string(),
-            audio_bitrate: Some(192),
-            filters: vec![],
-            filter_complex: None,
-            audio_filter: None,
-        };
-        let args = build_render_args(&plan);
-
-        let ba_idx = args.iter().position(|a| a == "-b:a").unwrap();
-        assert_eq!(args[ba_idx + 1], "192k");
-    }
-
-    #[test]
-    fn test_build_render_args_no_preset_no_bitrate() {
-        let plan = default_plan(PathBuf::from("/in.mp4"), PathBuf::from("/out.mp4"));
-        let args = build_render_args(&plan);
-        assert!(!args.contains(&"-preset".to_string()));
-        assert!(!args.contains(&"-b:a".to_string()));
-    }
-
-    #[test]
-    fn test_build_render_args_with_filter_complex() {
-        let mut plan = default_plan(PathBuf::from("/in.mp4"), PathBuf::from("/out.mp4"));
-        plan.filter_complex = Some("scale=1920:1080,setpts=PTS/2".to_string());
-        let args = build_render_args(&plan);
-
-        let fc_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert_eq!(args[fc_idx + 1], "scale=1920:1080,setpts=PTS/2");
-        // filter_complex should not also emit -vf
-        assert!(!args.contains(&"-vf".to_string()));
-    }
-
-    #[test]
-    fn test_build_render_args_with_audio_filter() {
-        let mut plan = default_plan(PathBuf::from("/in.mp4"), PathBuf::from("/out.mp4"));
-        plan.audio_filter = Some("atempo=2.0".to_string());
-        let args = build_render_args(&plan);
-
-        let af_idx = args.iter().position(|a| a == "-af").unwrap();
-        assert_eq!(args[af_idx + 1], "atempo=2.0");
-    }
-
-    #[test]
-    fn test_build_render_args_filter_complex_overrides_vf() {
-        let mut plan = default_plan(PathBuf::from("/in.mp4"), PathBuf::from("/out.mp4"));
-        plan.filters = vec!["scale=80:60".to_string()];
-        plan.filter_complex = Some("scale=1920:1080".to_string());
-        let args = build_render_args(&plan);
-
-        // filter_complex takes precedence
-        assert!(args.contains(&"-filter_complex".to_string()));
-        assert!(!args.contains(&"-vf".to_string()));
-    }
-
     // ── Audio transcoding tests ────────────────────────────────────
 
     /// Create a test video WITH audio (sine wave + test pattern).
@@ -1332,7 +1091,6 @@ mod tests {
             audio_filter: None,
         };
 
-        // Preset is currently only used in subprocess args, so native still works.
         let result = render_native(&plan).unwrap();
         assert!(result.duration_secs > 0.0);
     }
@@ -1556,5 +1314,56 @@ mod tests {
         let result = render_native(&plan).unwrap();
         assert!(result.duration_secs > 0.0);
         assert!(output.exists());
+    }
+
+    #[test]
+    fn test_resolve_scale_dimensions_both_positive() {
+        assert_eq!(resolve_scale_dimensions(640, 360, 1920, 1080), (640, 360));
+    }
+
+    #[test]
+    fn test_resolve_scale_dimensions_neg2_height() {
+        // scale=640:-2 on 1920x1080 → 640x360 (360 is already even)
+        assert_eq!(resolve_scale_dimensions(640, -2, 1920, 1080), (640, 360));
+    }
+
+    #[test]
+    fn test_resolve_scale_dimensions_neg2_height_rounds_up() {
+        // scale=640:-2 on 1920x1000 → 640x334 (333.33 → rounds up to 334, nearest even)
+        assert_eq!(resolve_scale_dimensions(640, -2, 1920, 1000), (640, 334));
+    }
+
+    #[test]
+    fn test_resolve_scale_dimensions_neg1_height() {
+        // scale=640:-1 on 1920x1080 → 640x360
+        assert_eq!(resolve_scale_dimensions(640, -1, 1920, 1080), (640, 360));
+    }
+
+    #[test]
+    fn test_resolve_scale_dimensions_neg2_width() {
+        // scale=-2:360 on 1920x1080 → 640x360
+        assert_eq!(resolve_scale_dimensions(-2, 360, 1920, 1080), (640, 360));
+    }
+
+    #[test]
+    fn test_resolve_scale_dimensions_both_negative_fallback() {
+        // Both negative → fallback to decoder dimensions
+        assert_eq!(resolve_scale_dimensions(-2, -2, 1920, 1080), (1920, 1080));
+    }
+
+    #[test]
+    fn test_parse_output_dimensions_scale_with_neg2() {
+        assert_eq!(
+            parse_output_dimensions("scale=640:-2", 1920, 1080),
+            (640, 360)
+        );
+    }
+
+    #[test]
+    fn test_parse_output_dimensions_scale_with_neg1() {
+        assert_eq!(
+            parse_output_dimensions("scale=-1:720", 1920, 1080),
+            (1280, 720)
+        );
     }
 }

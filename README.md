@@ -40,7 +40,7 @@ reeln-core (Rust workspace)
 rustup update stable
 ```
 
-**FFmpeg development libraries:**
+**libav\* development libraries** (the `ffmpeg` command-line binary is not required at runtime):
 
 ```bash
 # macOS

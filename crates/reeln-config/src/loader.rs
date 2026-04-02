@@ -96,9 +96,6 @@ pub fn apply_env_overrides(config: &mut AppConfig) {
     {
         config.video.crf = crf;
     }
-    if let Ok(val) = std::env::var("REELN_VIDEO_FFMPEG_PATH") {
-        config.video.ffmpeg_path = val;
-    }
     if let Ok(val) = std::env::var("REELN_VIDEO_AUDIO_CODEC") {
         config.video.audio_codec = val;
     }
@@ -416,16 +413,6 @@ mod tests {
         apply_env_overrides(&mut config);
         assert_eq!(config.video.preset, "slow");
         unsafe { std::env::remove_var("REELN_VIDEO_PRESET") };
-    }
-
-    #[test]
-    #[serial]
-    fn test_apply_env_overrides_video_ffmpeg_path() {
-        let mut config = default_config();
-        unsafe { std::env::set_var("REELN_VIDEO_FFMPEG_PATH", "/usr/local/bin/ffmpeg") };
-        apply_env_overrides(&mut config);
-        assert_eq!(config.video.ffmpeg_path, "/usr/local/bin/ffmpeg");
-        unsafe { std::env::remove_var("REELN_VIDEO_FFMPEG_PATH") };
     }
 
     #[test]

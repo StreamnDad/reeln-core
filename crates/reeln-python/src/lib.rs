@@ -197,21 +197,12 @@ fn composite_overlay(
         crf,
         audio_codec: audio_codec.to_string(),
     };
-    // Try native composite first, fall back to subprocess.
-    let result = reeln_media::composite::composite_overlay_native(
+    let result = reeln_media::composite::composite_overlay(
         std::path::Path::new(video),
         std::path::Path::new(overlay_png),
         std::path::Path::new(output),
         &opts,
     )
-    .or_else(|_| {
-        reeln_media::composite::composite_overlay(
-            std::path::Path::new(video),
-            std::path::Path::new(overlay_png),
-            std::path::Path::new(output),
-            &opts,
-        )
-    })
     .map_err(media_err)?;
     Python::with_gil(|py| {
         let dict = PyDict::new(py);
@@ -222,8 +213,6 @@ fn composite_overlay(
 }
 
 /// Concatenate video files with xfade/acrossfade transitions.
-///
-/// Tries native execution first, falls back to subprocess.
 ///
 /// Args:
 ///     files: list of input file paths (minimum 2)
@@ -257,14 +246,6 @@ fn xfade_concat(
         audio_rate,
     };
     reeln_media::xfade::xfade_concat_native(&refs, &durations, std::path::Path::new(output), &opts)
-        .or_else(|_| {
-            reeln_media::xfade::xfade_concat_subprocess(
-                &refs,
-                &durations,
-                std::path::Path::new(output),
-                &opts,
-            )
-        })
         .map(|_| ())
         .map_err(media_err)
 }

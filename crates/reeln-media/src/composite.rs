@@ -5,10 +5,8 @@
 //! which is available in every ffmpeg/libav* build with zero additional dependencies.
 
 use std::path::Path;
-use std::process::Command;
 
 use crate::error::MediaError;
-use crate::probe;
 
 /// Options for compositing an overlay onto a video.
 #[derive(Debug, Clone)]
@@ -50,46 +48,11 @@ pub struct CompositeResult {
     pub duration_secs: f64,
 }
 
-/// Composite a PNG overlay onto a video file.
-///
-/// Uses ffmpeg's `overlay` filter to position the PNG on top of the video.
-/// Supports optional timing (show overlay only during a time window).
-pub fn composite_overlay(
-    video: &Path,
-    overlay_png: &Path,
-    output: &Path,
-    opts: &CompositeOptions,
-) -> Result<CompositeResult, MediaError> {
-    if !video.exists() {
-        return Err(MediaError::Render(format!(
-            "video does not exist: {}",
-            video.display()
-        )));
-    }
-    if !overlay_png.exists() {
-        return Err(MediaError::Render(format!(
-            "overlay does not exist: {}",
-            overlay_png.display()
-        )));
-    }
-
-    let args = build_composite_args(video, overlay_png, output, opts);
-    run_ffmpeg(&args).map_err(|e| MediaError::Render(format!("ffmpeg composite failed: {e}")))?;
-
-    let info = probe::probe(output)?;
-    let duration_secs = info.duration_secs.unwrap_or(0.0);
-
-    Ok(CompositeResult {
-        output: output.to_path_buf(),
-        duration_secs,
-    })
-}
-
-/// Native composite: overlay a PNG onto a video using the render pipeline.
+/// Composite a PNG overlay onto a video file using the native render pipeline.
 ///
 /// Builds a `RenderPlan` with a `movie` filter-based `filter_complex` string
 /// and delegates to the standard `render_native()` pipeline. Audio is preserved.
-pub fn composite_overlay_native(
+pub fn composite_overlay(
     video: &Path,
     overlay_png: &Path,
     output: &Path,
@@ -155,82 +118,11 @@ pub fn composite_overlay_native(
     })
 }
 
-/// Build ffmpeg CLI arguments for overlay compositing.
-pub(crate) fn build_composite_args(
-    video: &Path,
-    overlay_png: &Path,
-    output: &Path,
-    opts: &CompositeOptions,
-) -> Vec<String> {
-    let mut args = vec![
-        "-y".to_string(),
-        "-i".to_string(),
-        video.display().to_string(),
-        "-i".to_string(),
-        overlay_png.display().to_string(),
-    ];
-
-    // Build the overlay filter with optional enable timing.
-    let mut overlay_filter = format!("overlay={}:{}", opts.x, opts.y);
-
-    // Add enable expression for timed overlays.
-    match (opts.start_time, opts.end_time) {
-        (Some(start), Some(end)) => {
-            overlay_filter.push_str(&format!(":enable='between(t,{start},{end})'"));
-        }
-        (Some(start), None) => {
-            overlay_filter.push_str(&format!(":enable='gte(t,{start})'"));
-        }
-        (None, Some(end)) => {
-            overlay_filter.push_str(&format!(":enable='lte(t,{end})'"));
-        }
-        (None, None) => {}
-    }
-
-    args.extend([
-        "-filter_complex".to_string(),
-        format!("[0:v][1:v]{overlay_filter}[out]"),
-        "-map".to_string(),
-        "[out]".to_string(),
-        "-map".to_string(),
-        "0:a?".to_string(),
-        "-c:v".to_string(),
-        opts.video_codec.clone(),
-        "-crf".to_string(),
-        opts.crf.to_string(),
-        "-c:a".to_string(),
-        opts.audio_codec.clone(),
-    ]);
-
-    args.push(output.display().to_string());
-    args
-}
-
-/// Run ffmpeg with the given arguments.
-fn run_ffmpeg(args: &[String]) -> Result<(), String> {
-    let output = Command::new("ffmpeg")
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .map_err(|e| format!("failed to spawn ffmpeg: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
-            "ffmpeg exited with {}: {}",
-            output.status,
-            stderr.lines().last().unwrap_or("unknown error")
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::process::Command;
 
     fn create_test_video(path: &Path) {
         let status = Command::new("ffmpeg")
@@ -262,117 +154,6 @@ mod tests {
             }
         });
         img.save(path).unwrap();
-    }
-
-    #[test]
-    fn test_build_composite_args_basic() {
-        let opts = CompositeOptions::default();
-        let args = build_composite_args(
-            Path::new("/in.mp4"),
-            Path::new("/overlay.png"),
-            Path::new("/out.mp4"),
-            &opts,
-        );
-
-        assert!(args.contains(&"-y".to_string()));
-        assert!(args.contains(&"/in.mp4".to_string()));
-        assert!(args.contains(&"/overlay.png".to_string()));
-
-        let fc_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert!(args[fc_idx + 1].contains("overlay=0:0"));
-        assert_eq!(args.last().unwrap(), "/out.mp4");
-    }
-
-    #[test]
-    fn test_build_composite_args_with_position() {
-        let opts = CompositeOptions {
-            x: 100,
-            y: 50,
-            ..Default::default()
-        };
-        let args = build_composite_args(
-            Path::new("/in.mp4"),
-            Path::new("/overlay.png"),
-            Path::new("/out.mp4"),
-            &opts,
-        );
-
-        let fc_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert!(args[fc_idx + 1].contains("overlay=100:50"));
-    }
-
-    #[test]
-    fn test_build_composite_args_with_timing() {
-        let opts = CompositeOptions {
-            start_time: Some(1.0),
-            end_time: Some(5.0),
-            ..Default::default()
-        };
-        let args = build_composite_args(
-            Path::new("/in.mp4"),
-            Path::new("/overlay.png"),
-            Path::new("/out.mp4"),
-            &opts,
-        );
-
-        let fc_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert!(args[fc_idx + 1].contains("enable='between(t,1,5)'"));
-    }
-
-    #[test]
-    fn test_build_composite_args_start_only() {
-        let opts = CompositeOptions {
-            start_time: Some(2.5),
-            end_time: None,
-            ..Default::default()
-        };
-        let args = build_composite_args(
-            Path::new("/in.mp4"),
-            Path::new("/overlay.png"),
-            Path::new("/out.mp4"),
-            &opts,
-        );
-
-        let fc_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert!(args[fc_idx + 1].contains("enable='gte(t,2.5)'"));
-    }
-
-    #[test]
-    fn test_build_composite_args_end_only() {
-        let opts = CompositeOptions {
-            start_time: None,
-            end_time: Some(3.0),
-            ..Default::default()
-        };
-        let args = build_composite_args(
-            Path::new("/in.mp4"),
-            Path::new("/overlay.png"),
-            Path::new("/out.mp4"),
-            &opts,
-        );
-
-        let fc_idx = args.iter().position(|a| a == "-filter_complex").unwrap();
-        assert!(args[fc_idx + 1].contains("enable='lte(t,3)'"));
-    }
-
-    #[test]
-    fn test_build_composite_args_codec_options() {
-        let opts = CompositeOptions {
-            video_codec: "libx265".to_string(),
-            crf: 28,
-            audio_codec: "libopus".to_string(),
-            ..Default::default()
-        };
-        let args = build_composite_args(
-            Path::new("/in.mp4"),
-            Path::new("/overlay.png"),
-            Path::new("/out.mp4"),
-            &opts,
-        );
-
-        assert!(args.contains(&"libx265".to_string()));
-        assert!(args.contains(&"28".to_string()));
-        assert!(args.contains(&"libopus".to_string()));
     }
 
     #[test]
@@ -428,10 +209,6 @@ mod tests {
             &opts,
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
-            MediaError::Render(msg) => assert!(msg.contains("does not exist")),
-            other => panic!("expected Render error, got {other:?}"),
-        }
     }
 
     #[test]
@@ -448,14 +225,10 @@ mod tests {
             &opts,
         );
         assert!(result.is_err());
-        match result.unwrap_err() {
-            MediaError::Render(msg) => assert!(msg.contains("does not exist")),
-            other => panic!("expected Render error, got {other:?}"),
-        }
     }
 
     #[test]
-    fn test_composite_integration() {
+    fn test_composite_basic() {
         let dir = tempfile::tempdir().unwrap();
         let video = dir.path().join("input.mp4");
         create_test_video(&video);
@@ -463,7 +236,7 @@ mod tests {
         let overlay = dir.path().join("overlay.png");
         create_test_overlay(&overlay, 80, 60);
 
-        let output = dir.path().join("composited.mp4");
+        let output = dir.path().join("native_composited.mp4");
         let opts = CompositeOptions::default();
         let result = composite_overlay(&video, &overlay, &output, &opts).unwrap();
 
@@ -480,7 +253,7 @@ mod tests {
         let overlay = dir.path().join("overlay.png");
         create_test_overlay(&overlay, 40, 30);
 
-        let output = dir.path().join("positioned.mp4");
+        let output = dir.path().join("native_positioned.mp4");
         let opts = CompositeOptions {
             x: 20,
             y: 10,
@@ -500,100 +273,13 @@ mod tests {
         let overlay = dir.path().join("overlay.png");
         create_test_overlay(&overlay, 40, 30);
 
-        let output = dir.path().join("timed.mp4");
-        let opts = CompositeOptions {
-            start_time: Some(0.5),
-            end_time: Some(1.5),
-            ..Default::default()
-        };
-        let result = composite_overlay(&video, &overlay, &output, &opts).unwrap();
-        assert!(output.exists());
-        assert!(result.duration_secs > 1.0);
-    }
-
-    // ── Native composite overlay tests ─────────────────────────────
-
-    #[test]
-    fn test_composite_native_nonexistent_video() {
-        let opts = CompositeOptions::default();
-        let result = composite_overlay_native(
-            Path::new("/tmp/nonexistent_video.mp4"),
-            Path::new("/tmp/overlay.png"),
-            Path::new("/tmp/out.mp4"),
-            &opts,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_composite_native_nonexistent_overlay() {
-        let dir = tempfile::tempdir().unwrap();
-        let video = dir.path().join("test.mp4");
-        create_test_video(&video);
-
-        let opts = CompositeOptions::default();
-        let result = composite_overlay_native(
-            &video,
-            Path::new("/tmp/nonexistent_overlay.png"),
-            &dir.path().join("out.mp4"),
-            &opts,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_composite_native_basic() {
-        let dir = tempfile::tempdir().unwrap();
-        let video = dir.path().join("input.mp4");
-        create_test_video(&video);
-
-        let overlay = dir.path().join("overlay.png");
-        create_test_overlay(&overlay, 80, 60);
-
-        let output = dir.path().join("native_composited.mp4");
-        let opts = CompositeOptions::default();
-        let result = composite_overlay_native(&video, &overlay, &output, &opts).unwrap();
-
-        assert!(output.exists());
-        assert!(result.duration_secs > 1.0);
-    }
-
-    #[test]
-    fn test_composite_native_with_position() {
-        let dir = tempfile::tempdir().unwrap();
-        let video = dir.path().join("input.mp4");
-        create_test_video(&video);
-
-        let overlay = dir.path().join("overlay.png");
-        create_test_overlay(&overlay, 40, 30);
-
-        let output = dir.path().join("native_positioned.mp4");
-        let opts = CompositeOptions {
-            x: 20,
-            y: 10,
-            ..Default::default()
-        };
-        let result = composite_overlay_native(&video, &overlay, &output, &opts).unwrap();
-        assert!(output.exists());
-        assert!(result.duration_secs > 1.0);
-    }
-
-    #[test]
-    fn test_composite_native_with_timing() {
-        let dir = tempfile::tempdir().unwrap();
-        let video = dir.path().join("input.mp4");
-        create_test_video(&video);
-
-        let overlay = dir.path().join("overlay.png");
-        create_test_overlay(&overlay, 40, 30);
-
         let output = dir.path().join("native_timed.mp4");
         let opts = CompositeOptions {
             start_time: Some(0.5),
             end_time: Some(1.5),
             ..Default::default()
         };
-        let result = composite_overlay_native(&video, &overlay, &output, &opts).unwrap();
+        let result = composite_overlay(&video, &overlay, &output, &opts).unwrap();
         assert!(output.exists());
         assert!(result.duration_secs > 1.0);
     }

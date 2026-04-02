@@ -66,8 +66,7 @@ pub trait MediaBackend: Send + Sync {
     fn render(&self, plan: &RenderPlan) -> Result<RenderResult, MediaError>;
 }
 
-/// Backend that uses native ffmpeg-next (libav*) for probing and codec
-/// discovery, and subprocess ffmpeg for concat/render operations.
+/// Backend that uses native ffmpeg-next (libav*) for all media operations.
 #[derive(Debug, Default, Clone)]
 pub struct LibavBackend;
 
@@ -93,38 +92,6 @@ impl MediaBackend for LibavBackend {
 
     fn render(&self, plan: &RenderPlan) -> Result<RenderResult, MediaError> {
         render::render_native(plan)
-    }
-}
-
-/// Backend that shells out to the system ffmpeg binary for all operations.
-/// Useful when libav* linking is not available.
-#[derive(Debug, Default, Clone)]
-pub struct SubprocessBackend;
-
-impl SubprocessBackend {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl MediaBackend for SubprocessBackend {
-    fn probe(&self, path: &Path) -> Result<MediaInfo, MediaError> {
-        // Use native probe even in subprocess backend since it's read-only
-        // and simpler than parsing ffprobe JSON output.
-        probe::probe(path)
-    }
-
-    fn concat(
-        &self,
-        segments: &[&Path],
-        output: &Path,
-        opts: &ConcatOptions,
-    ) -> Result<(), MediaError> {
-        concat::concat_subprocess(segments, output, opts)
-    }
-
-    fn render(&self, plan: &RenderPlan) -> Result<RenderResult, MediaError> {
-        render::render_subprocess(plan)
     }
 }
 
@@ -216,76 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn test_subprocess_backend_probe() {
-        let dir = tempfile::tempdir().unwrap();
-        let video = dir.path().join("test_sub.mp4");
-        create_test_video(&video);
-
-        let backend = SubprocessBackend::new();
-        let info = backend.probe(&video).unwrap();
-        assert!(info.duration_secs.is_some());
-    }
-
-    #[test]
-    fn test_subprocess_backend_concat() {
-        let dir = tempfile::tempdir().unwrap();
-        let seg = dir.path().join("s_sub.mp4");
-        create_test_video(&seg);
-
-        let output = dir.path().join("out_sub.mp4");
-        let backend = SubprocessBackend::new();
-        let opts = ConcatOptions {
-            copy: true,
-            video_codec: "libx264".to_string(),
-            crf: 23,
-            audio_codec: "aac".to_string(),
-            audio_rate: 48000,
-        };
-        backend.concat(&[seg.as_path()], &output, &opts).unwrap();
-        assert!(output.exists());
-    }
-
-    #[test]
-    fn test_subprocess_backend_render() {
-        let dir = tempfile::tempdir().unwrap();
-        let input = dir.path().join("r_sub_in.mp4");
-        create_test_video(&input);
-
-        let output = dir.path().join("r_sub_out.mp4");
-        let backend = SubprocessBackend::new();
-        let plan = RenderPlan {
-            input,
-            output: output.clone(),
-            video_codec: "libx264".to_string(),
-            crf: 23,
-            preset: None,
-            audio_codec: "aac".to_string(),
-            audio_bitrate: None,
-            filters: vec![],
-            filter_complex: None,
-            audio_filter: None,
-        };
-        let result = backend.render(&plan).unwrap();
-        assert!(result.duration_secs > 0.0);
-    }
-
-    #[test]
     #[allow(clippy::default_constructed_unit_structs)]
     fn test_libav_backend_default_and_clone() {
         let b1 = LibavBackend::default();
         let b2 = b1.clone();
         let debug = format!("{b1:?}");
         assert!(debug.contains("LibavBackend"));
-        let _ = b2;
-    }
-
-    #[test]
-    #[allow(clippy::default_constructed_unit_structs)]
-    fn test_subprocess_backend_default_and_clone() {
-        let b1 = SubprocessBackend::default();
-        let b2 = b1.clone();
-        let debug = format!("{b1:?}");
-        assert!(debug.contains("SubprocessBackend"));
         let _ = b2;
     }
 

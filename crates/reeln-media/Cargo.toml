@@ -12,7 +12,6 @@ ffmpeg-next.workspace = true
 thiserror.workspace = true
 log.workspace = true
 libc = "0.2"
-tempfile.workspace = true
 image.workspace = true
 
 [dev-dependencies]
