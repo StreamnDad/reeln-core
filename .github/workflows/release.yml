@@ -42,25 +42,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist -m crates/reeln-python/Cargo.toml --interpreter 3.11 3.12 3.13
-          manylinux: ${{ runner.os == 'Linux' && 'manylinux_2_28' || 'off' }}
-          before-script-linux: |
-            set -eux
-            dnf install -y nasm yasm diffutils pkgconfig curl xz clang-devel
-            curl -sL https://ffmpeg.org/releases/ffmpeg-7.0.2.tar.xz -o /tmp/ffmpeg.tar.xz
-            tar xf /tmp/ffmpeg.tar.xz -C /tmp
-            (
-              cd /tmp/ffmpeg-7.0.2
-              ./configure \
-                --prefix=/usr/local \
-                --enable-shared \
-                --disable-static \
-                --disable-doc \
-                --disable-programs
-              make -j$(nproc)
-              make install
-            )
-            ldconfig
-            export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH:-}
+          container: ${{ runner.os == 'Linux' && 'ghcr.io/streamndad/manylinux-ffmpeg:7.0.2' || '' }}
 
       - uses: actions/upload-artifact@v4
         with:
