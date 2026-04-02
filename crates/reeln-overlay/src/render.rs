@@ -34,7 +34,11 @@ pub fn render_template_to_png(
 }
 
 /// Substitute template variables in a dimension string, then resolve to pixels.
-fn resolve_dim(value: &str, container_size: u32, context: &TemplateContext) -> Result<f32, OverlayError> {
+fn resolve_dim(
+    value: &str,
+    container_size: u32,
+    context: &TemplateContext,
+) -> Result<f32, OverlayError> {
     let resolved = template::substitute_variables(value, context);
     resolve_dimension(&resolved, container_size)
 }
@@ -116,11 +120,15 @@ fn render_layer(
 
             // Substitute variables in color strings before rendering text
             let resolved_color = match color {
-                elements::Color::Hex(s) => elements::Color::Hex(template::substitute_variables(s, context)),
+                elements::Color::Hex(s) => {
+                    elements::Color::Hex(template::substitute_variables(s, context))
+                }
             };
             let resolved_outline = outline.as_ref().map(|o| elements::OutlineSpec {
                 color: match &o.color {
-                    elements::Color::Hex(s) => elements::Color::Hex(template::substitute_variables(s, context)),
+                    elements::Color::Hex(s) => {
+                        elements::Color::Hex(template::substitute_variables(s, context))
+                    }
                 },
                 width: o.width,
             });
@@ -180,7 +188,13 @@ fn render_layer(
                 return Ok(());
             }
 
-            render_gradient(pixmap, &GradientParams { x, y, w, h }, stops, direction, context)?;
+            render_gradient(
+                pixmap,
+                &GradientParams { x, y, w, h },
+                stops,
+                direction,
+                context,
+            )?;
         }
     }
     Ok(())
@@ -295,7 +309,10 @@ fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
     (a as f32 + (b as f32 - a as f32) * t).round() as u8
 }
 
-fn parse_element_color(color: &elements::Color, context: &TemplateContext) -> Result<(u8, u8, u8, u8), OverlayError> {
+fn parse_element_color(
+    color: &elements::Color,
+    context: &TemplateContext,
+) -> Result<(u8, u8, u8, u8), OverlayError> {
     match color {
         elements::Color::Hex(s) => {
             let resolved = template::substitute_variables(s, context);
