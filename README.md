@@ -166,7 +166,7 @@ cargo build -p reeln-ffi --release
 
 ## Versioning
 
-- Workspace version: **0.2.1** (all crates share this version)
+- Workspace version: **0.2.2** (all crates share this version)
 - reeln-cli declares `reeln-native >= 0.1.0, < 1.0` as optional dependency
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Semantic versioning: MAJOR.MINOR.PATCH

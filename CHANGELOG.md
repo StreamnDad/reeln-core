@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-04-02
+
+### Changed
+
+- Full PyPI package description: README now renders on the PyPI page.
+- Rust compilation cache (`Swatinem/rust-cache`) in CI and release workflows.
+- CI python bindings job runs in parallel with check (removed serial dependency).
+- Pre-built manylinux container with FFmpeg 7.0.2 for faster Linux wheel builds.
+
 ## [0.2.1] - 2026-04-02
 
 ### Fixed
