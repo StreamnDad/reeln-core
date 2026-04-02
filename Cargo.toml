@@ -47,7 +47,7 @@ dirs = "6"
 glob = "0.3"
 
 # Python bindings
-pyo3 = { version = "0.23", features = ["extension-module"] }
+pyo3 = { version = "0.24", features = ["extension-module"] }
 
 # Dynamic loading
 libloading = "0.8"
