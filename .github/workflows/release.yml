@@ -35,6 +35,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: runner.os == 'macOS'
 
+      - name: Login to GHCR
+        if: runner.os == 'Linux'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg pkg-config
