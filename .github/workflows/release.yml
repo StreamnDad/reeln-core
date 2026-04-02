@@ -31,6 +31,9 @@ jobs:
             3.12
             3.13
 
+      - uses: Swatinem/rust-cache@v2
+        if: runner.os == 'macOS'
+
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg pkg-config
