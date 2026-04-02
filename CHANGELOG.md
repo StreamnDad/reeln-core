@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-04-02
+
+### Fixed
+
+- Manylinux container now builds FFmpeg with libx264 (`--enable-gpl --enable-libx264`) so Linux wheels include h264 encoding support at runtime.
+
 ## [0.2.2] - 2026-04-02
 
 ### Changed
