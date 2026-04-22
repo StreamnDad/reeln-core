@@ -22,4 +22,7 @@ pub enum StateError {
 
     #[error("glob pattern error: {0}")]
     GlobPattern(#[from] glob::PatternError),
+
+    #[error("mutation error: {0}")]
+    Mutation(String),
 }
