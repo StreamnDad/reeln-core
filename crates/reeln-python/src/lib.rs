@@ -325,6 +325,158 @@ fn save_game_state(game_dir: &str, json_str: &str) -> PyResult<String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+// ── State mutation functions ────────────────────────────────────────
+//
+// Each function accepts the game state as a JSON string, deserializes,
+// applies a pure mutation via reeln_state, and returns the updated JSON.
+// The caller controls transaction boundaries (load/save).
+
+#[pyfunction]
+fn mark_finished(json_str: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::mark_finished(&mut state);
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn set_tournament(json_str: &str, tournament: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::set_tournament(&mut state, tournament);
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn mark_segment_processed(json_str: &str, segment_number: u32) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::mark_segment_processed(&mut state, segment_number);
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn set_segment_output(json_str: &str, output_path: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::set_segment_output(&mut state, output_path.to_string());
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn mark_highlighted(json_str: &str, output_path: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::mark_highlighted(&mut state, output_path.to_string());
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn add_event(json_str: &str, event_json: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid state JSON: {e}")))?;
+    let event: reeln_state::GameEvent = serde_json::from_str(event_json)
+        .map_err(|e| PyValueError::new_err(format!("invalid event JSON: {e}")))?;
+    reeln_state::add_event(&mut state, event);
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn add_render(json_str: &str, render_json: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid state JSON: {e}")))?;
+    let render: reeln_state::RenderEntry = serde_json::from_str(render_json)
+        .map_err(|e| PyValueError::new_err(format!("invalid render JSON: {e}")))?;
+    reeln_state::add_render(&mut state, render);
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+/// Clear all render entries. Returns (updated_state_json, count_removed).
+#[pyfunction]
+fn clear_renders(json_str: &str) -> PyResult<(String, u32)> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    let count = reeln_state::clear_renders(&mut state);
+    let json = serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))?;
+    Ok((json, count))
+}
+
+#[pyfunction]
+fn set_livestream(json_str: &str, platform: &str, url: &str) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::set_livestream(&mut state, platform, url);
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+fn update_event_field(
+    json_str: &str,
+    event_id: &str,
+    field: &str,
+    value: &str,
+) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::update_event_field(&mut state, event_id, field, value.to_string())
+        .map_err(state_err)?;
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+#[pyfunction]
+#[pyo3(signature = (json_str, event_id, event_type, team=None))]
+fn tag_event(
+    json_str: &str,
+    event_id: &str,
+    event_type: &str,
+    team: Option<&str>,
+) -> PyResult<String> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    reeln_state::tag_event(&mut state, event_id, event_type, team).map_err(state_err)?;
+    serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))
+}
+
+/// Update event_type on all events whose IDs are in event_ids.
+/// Returns (updated_state_json, count_updated).
+#[pyfunction]
+fn bulk_update_event_type(
+    json_str: &str,
+    event_ids: Vec<String>,
+    event_type: &str,
+) -> PyResult<(String, u32)> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    let count = reeln_state::bulk_update_event_type(&mut state, &event_ids, event_type);
+    let json = serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))?;
+    Ok((json, count))
+}
+
+/// Remove an event by ID. Returns (updated_state_json, removed_event_json).
+#[pyfunction]
+fn remove_event(json_str: &str, event_id: &str) -> PyResult<(String, String)> {
+    let mut state: reeln_state::GameState = serde_json::from_str(json_str)
+        .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
+    let removed = reeln_state::remove_event(&mut state, event_id).map_err(state_err)?;
+    let state_json = serde_json::to_string_pretty(&state)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))?;
+    let event_json = serde_json::to_string_pretty(&removed)
+        .map_err(|e| PyRuntimeError::new_err(format!("serialize error: {e}")))?;
+    Ok((state_json, event_json))
+}
+
 // ── Config functions ────────────────────────────────────────────────
 
 /// Get the default config directory path.
@@ -366,6 +518,65 @@ fn validate_config(json_str: &str) -> PyResult<Vec<String>> {
     let value: serde_json::Value = serde_json::from_str(json_str)
         .map_err(|e| PyValueError::new_err(format!("invalid JSON: {e}")))?;
     Ok(reeln_config::validate_config(&value))
+}
+
+// ── Config init functions ──────────────────────────────────────────
+
+/// List all available sports with segment info and default event types.
+/// Returns a list of dicts.
+#[pyfunction]
+fn list_available_sports() -> PyResult<PyObject> {
+    let sports = reeln_config::list_available_sports();
+    Python::with_gil(|py| {
+        let list = pyo3::types::PyList::empty(py);
+        for s in &sports {
+            let dict = PyDict::new(py);
+            dict.set_item("name", &s.name)?;
+            dict.set_item("segment_name", &s.segment_name)?;
+            dict.set_item("segment_count", s.segment_count)?;
+            dict.set_item("duration_minutes", s.duration_minutes)?;
+            let events = pyo3::types::PyList::empty(py);
+            for e in &s.default_event_types {
+                let ed = PyDict::new(py);
+                ed.set_item("name", e.name())?;
+                ed.set_item("team_specific", e.team_specific())?;
+                events.append(ed)?;
+            }
+            dict.set_item("default_event_types", events)?;
+            list.append(dict)?;
+        }
+        Ok(list.into())
+    })
+}
+
+/// Create an initial config file from user choices.
+/// Returns the path where the config was saved.
+#[pyfunction]
+#[pyo3(signature = (sport, source_dir, output_dir, config_path=None, create_dirs=false))]
+fn create_initial_config(
+    sport: &str,
+    source_dir: &str,
+    output_dir: &str,
+    config_path: Option<&str>,
+    create_dirs: bool,
+) -> PyResult<String> {
+    let options = reeln_config::InitOptions {
+        sport: sport.to_string(),
+        source_dir: PathBuf::from(source_dir),
+        output_dir: PathBuf::from(output_dir),
+        config_path: config_path.map(PathBuf::from),
+        create_dirs,
+    };
+    let path = reeln_config::create_initial_config(&options).map_err(config_err)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Check whether a config file exists at the given or default path.
+#[pyfunction]
+#[pyo3(signature = (path=None))]
+fn config_exists(path: Option<&str>) -> bool {
+    let p = path.map(std::path::Path::new);
+    reeln_config::config_exists(p)
 }
 
 // ── Overlay functions ──────────────────────────────────────────────
@@ -485,11 +696,29 @@ fn reeln_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_game_state, m)?)?;
     m.add_function(wrap_pyfunction!(save_game_state, m)?)?;
 
+    // State mutations
+    m.add_function(wrap_pyfunction!(mark_finished, m)?)?;
+    m.add_function(wrap_pyfunction!(set_tournament, m)?)?;
+    m.add_function(wrap_pyfunction!(mark_segment_processed, m)?)?;
+    m.add_function(wrap_pyfunction!(set_segment_output, m)?)?;
+    m.add_function(wrap_pyfunction!(mark_highlighted, m)?)?;
+    m.add_function(wrap_pyfunction!(add_event, m)?)?;
+    m.add_function(wrap_pyfunction!(add_render, m)?)?;
+    m.add_function(wrap_pyfunction!(clear_renders, m)?)?;
+    m.add_function(wrap_pyfunction!(set_livestream, m)?)?;
+    m.add_function(wrap_pyfunction!(update_event_field, m)?)?;
+    m.add_function(wrap_pyfunction!(tag_event, m)?)?;
+    m.add_function(wrap_pyfunction!(bulk_update_event_type, m)?)?;
+    m.add_function(wrap_pyfunction!(remove_event, m)?)?;
+
     // Config
     m.add_function(wrap_pyfunction!(config_dir, m)?)?;
     m.add_function(wrap_pyfunction!(data_dir, m)?)?;
     m.add_function(wrap_pyfunction!(load_config, m)?)?;
     m.add_function(wrap_pyfunction!(validate_config, m)?)?;
+    m.add_function(wrap_pyfunction!(list_available_sports, m)?)?;
+    m.add_function(wrap_pyfunction!(create_initial_config, m)?)?;
+    m.add_function(wrap_pyfunction!(config_exists, m)?)?;
 
     // Overlay
     m.add_function(wrap_pyfunction!(load_template, m)?)?;

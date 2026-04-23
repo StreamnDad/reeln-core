@@ -13,4 +13,7 @@ pub enum ConfigError {
 
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("config already exists: {0}")]
+    AlreadyExists(String),
 }

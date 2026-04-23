@@ -1,9 +1,14 @@
 pub mod error;
+pub mod init;
 pub mod loader;
 pub mod model;
 pub mod paths;
 
 pub use error::ConfigError;
+pub use init::{
+    InitOptions, SportInfo, build_initial_config, config_exists, create_initial_config,
+    list_available_sports,
+};
 pub use loader::{
     apply_env_overrides, deep_merge, default_config, load_config, save_config, validate_config,
 };

@@ -1044,6 +1044,7 @@ version = "0.2.3"
 dependencies = [
  "dirs",
  "log",
+ "reeln-sport",
  "serde",
  "serde_json",
  "serial_test",
