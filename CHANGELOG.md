@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-08
+
+### Added
+
+- State mutation functions exposed to Python bindings: `add_event`,
+  `mark_highlighted`, `add_render`, `mark_finished`, `update_event_field`,
+  `bulk_update_event_type`. These move the dock/CLI boundary so callers can
+  mutate `GameState` through reeln-state instead of touching dataclass fields
+  directly. Closes the migration gap noted in reeln-cli's CLAUDE.md.
+- Guided config init module with Python bindings.
+
 ## [0.2.3] - 2026-04-02
 
 ### Fixed
