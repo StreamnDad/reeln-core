@@ -50,7 +50,7 @@ glob = "0.3"
 pyo3 = { version = "0.24", features = ["extension-module"] }
 
 # Dynamic loading
-libloading = "0.8"
+libloading = "0.9"
 
 # Internal crates
 reeln-media = { path = "crates/reeln-media" }
